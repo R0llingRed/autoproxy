@@ -306,3 +306,103 @@ def test_clash_adapter_returns_listener_metadata(tmp_path: Path):
     assert result.listener_name == "auto-listener-txt-devtest"
     assert result.local_host == "127.0.0.1"
     assert result.local_port == 7890
+
+
+def test_clash_adapter_writes_current_profile_extension_script(tmp_path: Path):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+    profiles_path = tmp_path / "profiles.yaml"
+    script_path = profile_dir / "script-001.js"
+    profiles_path.write_text(
+        """
+current: current-profile
+items:
+  - uid: current-profile
+    type: local
+    file: current.yaml
+    option:
+      script: script-001
+""",
+        encoding="utf-8",
+    )
+    script_path.write_text(
+        "function main(config, profileName) {\n  return config;\n}\n",
+        encoding="utf-8",
+    )
+    adapter = ClashVergeAdapter(
+        base_proxy_name="A",
+        write_mode="script",
+        profiles_path=profiles_path,
+        profile_dir=profile_dir,
+        listener_start_port=7891,
+    )
+    record = ProxyRecord.from_uri(
+        "socks5://user:pass@1.2.3.4:5678",
+        proxy_id="proxy-b",
+        provider="txt",
+        name="devtest",
+    )
+
+    result = adapter.apply_proxy(record)
+    script = script_path.read_text(encoding="utf-8")
+
+    assert result.node_name == "auto-chain-txt-devtest"
+    assert result.listener_name == "auto-listener-txt-devtest"
+    assert result.local_port == 7891
+    assert "AUTOPROXY_MANAGED" in script
+    assert '"dialer-proxy": "A"' in script
+    assert '"port": 7891' in script
+    assert "config.listeners.push(entry.listener);" in script
+
+
+def test_clash_adapter_script_mode_increments_listener_ports(tmp_path: Path):
+    script_path = tmp_path / "Script.js"
+    script_path.write_text(
+        "function main(config, profileName) {\n  return config;\n}\n",
+        encoding="utf-8",
+    )
+    adapter = ClashVergeAdapter(
+        base_proxy_name="A",
+        write_mode="script",
+        script_path=script_path,
+        listener_start_port=7891,
+    )
+    first = ProxyRecord.from_uri(
+        "socks5://user:pass@1.2.3.4:5678",
+        proxy_id="first",
+        provider="txt",
+        name="first",
+    )
+    second = ProxyRecord.from_uri(
+        "socks5://5.6.7.8:6789",
+        proxy_id="second",
+        provider="txt",
+        name="second",
+    )
+
+    first_result = adapter.apply_proxy(first)
+    second_result = adapter.apply_proxy(second)
+    script = script_path.read_text(encoding="utf-8")
+
+    assert first_result.local_port == 7891
+    assert second_result.local_port == 7892
+    assert '"name": "auto-listener-txt-first"' in script
+    assert '"name": "auto-listener-txt-second"' in script
+    assert '"port": 7891' in script
+    assert '"port": 7892' in script
+
+
+def test_clash_adapter_script_removes_stale_yaml_managed_nodes_and_listeners():
+    adapter = ClashVergeAdapter(base_proxy_name="A", write_mode="script")
+
+    script = adapter.render_extension_script(
+        [
+            {
+                "node": {"name": "auto-chain-openbao-new"},
+                "listener": {"name": "auto-listener-openbao-new", "port": 7891},
+            }
+        ]
+    )
+
+    assert 'startsWith("auto-chain-")' in script
+    assert 'startsWith("auto-listener-")' in script

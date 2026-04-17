@@ -20,12 +20,15 @@
     "timeout": 10.0
   },
   "clash": {
+    "write_mode": "script",
     "base_proxy_name": "hs2-US",
     "managed_group_name": "AUTO-CHAIN",
     "managed_proxy_prefix": "auto-chain-",
     "listener_start_port": 7890,
     "listener_host": "127.0.0.1",
     "config_path": "configs/clash-verge-standard.yaml",
+    "profiles_path": "${CLASH_VERGE_HOME:-.}/profiles.yaml",
+    "profile_dir": "${CLASH_VERGE_HOME:-.}/profiles",
     "reload_after_write": false,
     "controller_url": "http://127.0.0.1:9090",
     "reload_force": true,

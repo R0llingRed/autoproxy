@@ -298,13 +298,41 @@ AdsPower -> 127.0.0.1:7890 -> Clash -> hs2-US -> 导入代理
 
 每条代理会占用一个本地 SOCKS 端口，从 `listener_start_port` 开始递增。
 
-## Clash Reload
-
-脚本写入 Clash YAML 后，运行中的 Clash / Mihomo core 不一定会自动加载新 listener。要让新增端口生效，推荐开启 external controller reload：
+推荐使用 `script` 模式写入 Clash Verge 的“扩展脚本”。这样 Clash Verge 生成最终运行配置时会注入链式代理和 listener，比直接修改 profile YAML 更稳定：
 
 ```json
 {
   "clash": {
+    "write_mode": "script",
+    "base_proxy_name": "hs2-US",
+    "listener_start_port": 7891,
+    "profiles_path": "${CLASH_VERGE_HOME}/profiles.yaml",
+    "profile_dir": "${CLASH_VERGE_HOME}/profiles"
+  }
+}
+```
+
+macOS 示例：
+
+```bash
+export CLASH_VERGE_HOME="$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev"
+```
+
+`script` 模式会读取 `profiles.yaml` 的 `current` profile，找到该 profile 的 `option.script`，然后写入对应的 `profiles/<script_uid>.js`。执行 `clash-write` 后，需要在 Clash Verge 里重新应用配置或重启内核，再检查端口：
+
+```bash
+python3 autoproxy.py clash-write --id proxy-010
+nc -vz 127.0.0.1 7891
+```
+
+## Clash Reload
+
+如果仍使用旧的 `yaml` 模式，脚本写入 Clash YAML 后，运行中的 Clash / Mihomo core 不一定会自动加载新 listener。要让新增端口生效，可以尝试开启 external controller reload：
+
+```json
+{
+  "clash": {
+    "write_mode": "yaml",
     "config_path": "configs/clash-verge-standard.yaml",
     "reload_after_write": true,
     "controller_url": "http://127.0.0.1:9090",
@@ -325,7 +353,7 @@ AdsPower -> 127.0.0.1:7890 -> Clash -> hs2-US -> 导入代理
 ## 注意事项
 
 - AdsPower 免费版只有 2 个环境，超过会创建失败。
-- 默认只写 Clash 配置文件；开启 `reload_after_write` 后会调用 Clash external controller reload。
+- 推荐用 Clash `script` 模式写扩展脚本；`yaml` 模式只适合 core 直接加载该 YAML 的场景。
 - 当前 OpenBao 主流程一次读取一个 `read_path`；批量导入写入 `import_prefix` 下的不同条目。
 - sub2api 和 AdsPower 会尽量复用已有记录，避免重复创建。
 - Windows 下请确认 Clash Verge / AdsPower / OpenBao 的本地 API 端口允许当前用户访问。

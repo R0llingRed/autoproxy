@@ -250,7 +250,11 @@ def test_build_clash_passes_reload_controller_settings(tmp_path):
             {
                 "clash": {
                     "base_proxy_name": "A",
+                    "write_mode": "script",
                     "config_path": "configs/active.yaml",
+                    "script_path": "profiles/Script.js",
+                    "profiles_path": "profiles.yaml",
+                    "profile_dir": "profiles",
                     "reload_after_write": True,
                     "controller_url": "http://127.0.0.1:9090",
                     "controller_secret": "secret",
@@ -266,6 +270,10 @@ def test_build_clash_passes_reload_controller_settings(tmp_path):
     clash = autoproxy_cli.build_clash(config)
 
     assert clash.config_path == config_dir / "configs" / "active.yaml"
+    assert clash.write_mode == "script"
+    assert clash.script_path == config_dir / "profiles" / "Script.js"
+    assert clash.profiles_path == config_dir / "profiles.yaml"
+    assert clash.profile_dir == config_dir / "profiles"
     assert clash.reload_after_write is True
     assert clash.controller_url == "http://127.0.0.1:9090"
     assert clash.controller_secret == "secret"

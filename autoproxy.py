@@ -96,11 +96,15 @@ def build_clash(config: dict[str, Any]) -> ClashVergeAdapter:
     clash = config["clash"]
     return ClashVergeAdapter(
         base_proxy_name=clash.get("base_proxy_name", "A"),
+        write_mode=clash.get("write_mode", "yaml"),
         managed_group_name=clash.get("managed_group_name", "AUTO-CHAIN"),
         managed_proxy_prefix=clash.get("managed_proxy_prefix", "auto-chain-"),
         listener_start_port=clash.get("listener_start_port", 7890),
         listener_host=clash.get("listener_host", "127.0.0.1"),
-        config_path=resolve_path(clash["config_path"], config),
+        config_path=resolve_path(clash["config_path"], config) if clash.get("config_path") else None,
+        script_path=resolve_path(clash["script_path"], config) if clash.get("script_path") else None,
+        profiles_path=resolve_path(clash["profiles_path"], config) if clash.get("profiles_path") else None,
+        profile_dir=resolve_path(clash["profile_dir"], config) if clash.get("profile_dir") else None,
         reload_after_write=clash.get("reload_after_write", False),
         controller_url=clash.get("controller_url"),
         controller_secret=clash.get("controller_secret"),
