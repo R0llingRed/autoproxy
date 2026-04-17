@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import requests
@@ -13,7 +13,11 @@ class AdsPowerAdapter:
     base_url: str
     api_key: str
     timeout: float = 10.0
-    session: Any = requests
+    session: Any = field(default_factory=requests.Session)
+
+    @property
+    def _base_url(self) -> str:
+        return self.base_url.rstrip("/")
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -37,7 +41,7 @@ class AdsPowerAdapter:
             }
         ]
         response = self.session.post(
-            f"{self.base_url.rstrip('/')}/api/v2/proxy-list/create",
+            f"{self._base_url}/api/v2/proxy-list/create",
             json=payload,
             headers=self._headers(),
             timeout=self.timeout,
@@ -49,14 +53,7 @@ class AdsPowerAdapter:
         return str(proxy_ids[0])
 
     def find_proxy(self, record: ProxyRecord) -> str | None:
-        response = self.session.post(
-            f"{self.base_url.rstrip('/')}/api/v2/proxy-list/list",
-            json={"page": "1", "limit": "200"},
-            headers=self._headers(),
-            timeout=self.timeout,
-        )
-        data = self._json_response(response)
-        for item in data.get("data", {}).get("list", []):
+        for item in self.iter_proxy_items():
             if (
                 item.get("type") == record.type
                 and item.get("host") == record.host
@@ -65,6 +62,26 @@ class AdsPowerAdapter:
             ):
                 return str(item["proxy_id"])
         return None
+
+    def iter_proxy_items(self, *, limit: int = 200):
+        page = 1
+        while True:
+            response = self.session.post(
+                f"{self._base_url}/api/v2/proxy-list/list",
+                json={"page": str(page), "limit": str(limit)},
+                headers=self._headers(),
+                timeout=self.timeout,
+            )
+            data = self._json_response(response).get("data", {})
+            items = data.get("list", [])
+            yield from items
+            total = data.get("total")
+            if total is not None:
+                if page * limit >= int(total):
+                    break
+            elif len(items) < limit:
+                break
+            page += 1
 
     def create_profile_with_local_proxy(
         self,
@@ -88,7 +105,7 @@ class AdsPowerAdapter:
             },
         }
         response = self.session.post(
-            f"{self.base_url.rstrip('/')}/api/v1/user/create",
+            f"{self._base_url}/api/v1/user/create",
             json=payload,
             headers=self._headers(),
             timeout=self.timeout,
@@ -110,15 +127,8 @@ class AdsPowerAdapter:
         local_host: str,
         local_port: int,
     ) -> str | None:
-        response = self.session.get(
-            f"{self.base_url.rstrip('/')}/api/v1/user/list",
-            params={"page": 1, "page_size": 200},
-            headers=self._headers(),
-            timeout=self.timeout,
-        )
-        data = self._json_response(response)
         expected_name = record.name or record.id
-        for item in data.get("data", {}).get("list", []):
+        for item in self.iter_profile_items():
             proxy_config = item.get("user_proxy_config") or {}
             if (
                 item.get("name") == expected_name
@@ -127,6 +137,26 @@ class AdsPowerAdapter:
             ):
                 return str(item.get("user_id") or item.get("id") or item.get("profile_id"))
         return None
+
+    def iter_profile_items(self, *, page_size: int = 200):
+        page = 1
+        while True:
+            response = self.session.get(
+                f"{self._base_url}/api/v1/user/list",
+                params={"page": page, "page_size": page_size},
+                headers=self._headers(),
+                timeout=self.timeout,
+            )
+            data = self._json_response(response).get("data", {})
+            items = data.get("list", [])
+            yield from items
+            total = data.get("total")
+            if total is not None:
+                if page * page_size >= int(total):
+                    break
+            elif len(items) < page_size:
+                break
+            page += 1
 
     def _json_response(self, response: Any) -> dict[str, Any]:
         response.raise_for_status()

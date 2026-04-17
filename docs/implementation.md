@@ -12,7 +12,7 @@
 
 ## 预期流程
 
-1. 运行 `python3 autoproxy.py --config config.openbao.example.json run --session-tag test001`。
+1. 运行 `python3 autoproxy.py run --session-tag test001`。
 2. 脚本读取配置中的 OpenBao secret path，并把数据规范化为代理记录。
 3. 代理记录同步到 `sub2api`。
 4. Clash Verge 配置被更新：导入代理 `B` 会变成 `auto-chain-*`，通过已配置的第一跳代理出站，并获得一个本地 SOCKS listener。
@@ -22,6 +22,7 @@
 ## 本地接入前需要确认
 
 - 复制 `config.openbao.example.json` 为 `config.local.json`，再填写本地服务地址和路径。
+- CLI 默认按 `config.local.json`、`config.openbao.json`、`config.openbao.example.json` 的顺序读取配置。
 - 导出 `OPENBAO_TOKEN`，并让 `proxy_source.secret_path` 指向要读取的 OpenBao 代理记录。
 - 导出 `SUB2API_EMAIL` 和 `SUB2API_PASSWORD`，或者直接提供 token。
 - 如果你的 sub2api 部署和默认接口不同，需要确认代理创建接口和字段名。
@@ -81,6 +82,8 @@ python3 autoproxy.py --config config.openbao.example.json adspower-add-proxy
 python3 autoproxy.py --config config.openbao.example.json adspower-create-profile
 python3 autoproxy.py --config config.openbao.example.json run --session-tag test001
 ```
+
+如果当前目录存在 `config.local.json`，上面的 `--config ...` 可以省略。
 
 `sub2api` 和 AdsPower 在创建前会先尝试复用已有记录，避免重复测试时堆积相同代理或 profile。
 

@@ -77,12 +77,46 @@ def install_fakes(monkeypatch, autoproxy_cli):
     monkeypatch.setattr(autoproxy_cli, "build_adspower", lambda config: FakeAdsPower())
 
 
+def test_resolve_env_expands_nested_list_dict(monkeypatch):
+    autoproxy_cli = load_cli_module()
+    monkeypatch.setenv("AUTO_PROXY_TEST_TOKEN", "secret-token")
+
+    resolved = autoproxy_cli._resolve_env(
+        {"items": [{"token": "${AUTO_PROXY_TEST_TOKEN}"}]}
+    )
+
+    assert resolved == {"items": [{"token": "secret-token"}]}
+
+
+def test_resolve_env_rejects_missing_env_var():
+    autoproxy_cli = load_cli_module()
+
+    try:
+        autoproxy_cli._resolve_env("${AUTO_PROXY_MISSING_TOKEN}")
+    except ValueError as exc:
+        assert "AUTO_PROXY_MISSING_TOKEN" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
 def test_cli_openbao_get_outputs_proxy(tmp_path, monkeypatch, capsys):
     autoproxy_cli = load_cli_module()
     install_fakes(monkeypatch, autoproxy_cli)
     config_path = write_config(tmp_path)
 
     assert autoproxy_cli.main(["--config", str(config_path), "openbao-get"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["name"] == "devtest"
+
+
+def test_cli_uses_config_local_json_by_default(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    write_config(tmp_path).rename(tmp_path / "config.local.json")
+    monkeypatch.chdir(tmp_path)
+
+    assert autoproxy_cli.main(["openbao-get"]) == 0
 
     output = json.loads(capsys.readouterr().out)
     assert output["name"] == "devtest"

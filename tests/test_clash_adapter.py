@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import yaml
 
 from autoproxy.adapters.clash_adapter import ClashVergeAdapter
@@ -183,6 +184,19 @@ def test_clash_adapter_requires_base_proxy_a():
         assert "base proxy" in str(exc).lower()
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_clash_adapter_removes_temp_file_when_yaml_validation_fails(tmp_path: Path):
+    config_path = tmp_path / "clash.yaml"
+    original = base_config()
+    config_path.write_text(original)
+    adapter = ClashVergeAdapter(base_proxy_name="A", config_path=config_path)
+
+    with pytest.raises(yaml.YAMLError):
+        adapter._write_config_atomic(":\n")
+
+    assert config_path.read_text() == original
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["clash.yaml", "clash.yaml.bak"]
 
 
 def test_clash_adapter_writes_backup_and_atomic_config(tmp_path: Path):

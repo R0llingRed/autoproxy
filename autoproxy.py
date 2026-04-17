@@ -15,6 +15,13 @@ from autoproxy.models import ProxyRecord
 from autoproxy.runner import FlowRunner
 
 
+DEFAULT_CONFIG_PATHS = [
+    Path("config.local.json"),
+    Path("config.openbao.json"),
+    Path("config.openbao.example.json"),
+]
+
+
 def _resolve_env(value: Any) -> Any:
     if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
         env_name = value[2:-1]
@@ -30,6 +37,16 @@ def _resolve_env(value: Any) -> Any:
 
 def load_config(path: Path) -> dict[str, Any]:
     return _resolve_env(json.loads(path.read_text()))
+
+
+def resolve_config_path(path: str | None) -> Path:
+    if path:
+        return Path(path)
+    for candidate in DEFAULT_CONFIG_PATHS:
+        if candidate.exists():
+            return candidate
+    joined = ", ".join(str(candidate) for candidate in DEFAULT_CONFIG_PATHS)
+    raise FileNotFoundError(f"no config file found; checked: {joined}")
 
 
 def build_proxy_source(config: dict[str, Any]):
@@ -168,8 +185,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AutoProxy module runner.")
     parser.add_argument(
         "--config",
-        default="config.openbao.example.json",
-        help="Path to the JSON config file.",
+        default=None,
+        help="Path to the JSON config file. Defaults to config.local.json when present.",
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
     command_handlers = {
@@ -194,7 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    config = load_config(Path(args.config))
+    config = load_config(resolve_config_path(args.config))
     return args.handler(config, args)
 
 

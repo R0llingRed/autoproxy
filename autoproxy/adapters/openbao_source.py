@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +15,7 @@ class OpenBaoProxySource:
     mount: str
     secret_path: str
     timeout: float = 10.0
-    session: Any = requests
+    session: Any = field(default_factory=requests.Session)
 
     @property
     def proxy_prefix(self) -> str:

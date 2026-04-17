@@ -29,6 +29,39 @@ class FakeSession:
         return FakeResponse({"code": 0, "data": {"items": self.proxies}})
 
 
+class PagedFakeSession:
+    def __init__(self):
+        self.calls = []
+
+    def post(self, url, *, json, headers, timeout):
+        self.calls.append(("POST", url, json, headers))
+        if url.endswith("/api/v1/auth/login"):
+            return FakeResponse({"code": 0, "data": {"access_token": "token"}})
+        return FakeResponse({"code": 0, "data": {"id": 42}})
+
+    def get(self, url, *, params, headers, timeout):
+        self.calls.append(("GET", url, params, headers))
+        if params["page"] == 1:
+            return FakeResponse({"code": 0, "data": {"items": [{"id": 1}], "total": 21}})
+        return FakeResponse(
+            {
+                "code": 0,
+                "data": {
+                    "items": [
+                        {
+                            "id": 7,
+                            "protocol": "socks5",
+                            "host": "1.2.3.4",
+                            "port": 1080,
+                            "username": "user",
+                        }
+                    ],
+                    "total": 21,
+                },
+            }
+        )
+
+
 def test_sub2api_builds_proxy_payload():
     adapter = Sub2ApiAdapter(base_url="https://sub2api.example.com", token="secret")
     record = ProxyRecord.from_uri(
@@ -112,6 +145,31 @@ def test_sub2api_reuses_existing_proxy():
     proxy_id = adapter.sync_proxy(record)
 
     assert proxy_id == "7"
+    assert not any(
+        call[0] == "POST" and call[1].endswith("/api/v1/admin/proxies")
+        for call in session.calls
+    )
+
+
+def test_sub2api_reuses_existing_proxy_found_on_later_page():
+    session = PagedFakeSession()
+    adapter = Sub2ApiAdapter(
+        base_url="https://sub2api.example.com",
+        email="admin@sub2api.local",
+        password="secret",
+        create_path="/api/v1/admin/proxies",
+        session=session,
+    )
+    record = ProxyRecord.from_uri(
+        "socks5://user:pass@1.2.3.4:1080",
+        proxy_id="proxy-123",
+    )
+
+    proxy_id = adapter.sync_proxy(record)
+
+    assert proxy_id == "7"
+    pages = [call[2]["page"] for call in session.calls if call[0] == "GET"]
+    assert pages == [1, 2]
     assert not any(
         call[0] == "POST" and call[1].endswith("/api/v1/admin/proxies")
         for call in session.calls

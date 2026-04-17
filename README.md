@@ -44,6 +44,14 @@ config.openbao.example.json
 cp config.openbao.example.json config.local.json
 ```
 
+默认情况下，CLI 会按顺序读取：
+
+```text
+config.local.json -> config.openbao.json -> config.openbao.example.json
+```
+
+因此日常使用时通常不需要传 `--config`。如果要指定其他配置文件，再使用 `--config <path>`。
+
 需要设置环境变量：
 
 ```bash
@@ -83,7 +91,7 @@ examples/openbao-proxies.example.json
 导入命令：
 
 ```bash
-python3 autoproxy.py --config config.local.json openbao-import --file examples/openbao-proxies.example.json
+python3 autoproxy.py openbao-import --file examples/openbao-proxies.example.json
 ```
 
 JSON 可以是单个对象：
@@ -124,37 +132,37 @@ JSON 可以是单个对象：
 读取 OpenBao 当前配置中的代理：
 
 ```bash
-python3 autoproxy.py --config config.local.json openbao-get
+python3 autoproxy.py openbao-get
 ```
 
 同步到 sub2api：
 
 ```bash
-python3 autoproxy.py --config config.local.json sub2api-sync
+python3 autoproxy.py sub2api-sync
 ```
 
 写入 Clash Verge 配置：
 
 ```bash
-python3 autoproxy.py --config config.local.json clash-write
+python3 autoproxy.py clash-write
 ```
 
 添加到 AdsPower 代理库：
 
 ```bash
-python3 autoproxy.py --config config.local.json adspower-add-proxy
+python3 autoproxy.py adspower-add-proxy
 ```
 
 创建 AdsPower 环境：
 
 ```bash
-python3 autoproxy.py --config config.local.json adspower-create-profile
+python3 autoproxy.py adspower-create-profile
 ```
 
 执行完整流程：
 
 ```bash
-python3 autoproxy.py --config config.local.json run --session-tag test001
+python3 autoproxy.py run --session-tag test001
 ```
 
 ## Clash 链式代理

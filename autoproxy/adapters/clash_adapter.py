@@ -149,8 +149,7 @@ class ClashVergeAdapter:
         return self.listener_for_record(updated, record)
 
     def _write_config_atomic(self, content: str) -> None:
-        if self.config_path is None:
-            return
+        assert self.config_path is not None
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         if self.config_path.exists():
             shutil.copy2(self.config_path, self.config_path.with_suffix(self.config_path.suffix + ".bak"))
@@ -162,5 +161,9 @@ class ClashVergeAdapter:
         ) as handle:
             handle.write(content)
             temp_path = Path(handle.name)
-        yaml.safe_load(temp_path.read_text())
-        os.replace(temp_path, self.config_path)
+        try:
+            yaml.safe_load(temp_path.read_text())
+            os.replace(temp_path, self.config_path)
+        except Exception:
+            temp_path.unlink(missing_ok=True)
+            raise

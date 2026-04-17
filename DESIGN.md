@@ -102,14 +102,16 @@ python3 autoproxy.py
 常用命令：
 
 ```bash
-python3 autoproxy.py --config config.local.json openbao-get
-python3 autoproxy.py --config config.local.json openbao-import --file examples/openbao-proxies.example.json
-python3 autoproxy.py --config config.local.json sub2api-sync
-python3 autoproxy.py --config config.local.json clash-write
-python3 autoproxy.py --config config.local.json adspower-add-proxy
-python3 autoproxy.py --config config.local.json adspower-create-profile
-python3 autoproxy.py --config config.local.json run --session-tag test001
+python3 autoproxy.py openbao-get
+python3 autoproxy.py openbao-import --file examples/openbao-proxies.example.json
+python3 autoproxy.py sub2api-sync
+python3 autoproxy.py clash-write
+python3 autoproxy.py adspower-add-proxy
+python3 autoproxy.py adspower-create-profile
+python3 autoproxy.py run --session-tag test001
 ```
+
+默认配置读取顺序是 `config.local.json`、`config.openbao.json`、`config.openbao.example.json`。
 
 ## 时序图
 

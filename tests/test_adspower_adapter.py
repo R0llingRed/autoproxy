@@ -40,6 +40,64 @@ class FakeSession:
         return FakeResponse({"code": 0, "msg": "Success", "data": {"id": "profile-001"}})
 
 
+class PagedFakeSession:
+    def __init__(self):
+        self.calls = []
+
+    def get(self, url, *, headers, params=None, timeout):
+        self.calls.append(("GET", url, params, headers))
+        if params["page"] == 1:
+            return FakeResponse({"code": 0, "msg": "Success", "data": {"list": [], "total": 201}})
+        return FakeResponse(
+            {
+                "code": 0,
+                "msg": "Success",
+                "data": {
+                    "list": [
+                        {
+                            "user_id": "existing-profile",
+                            "name": "local-socks",
+                            "user_proxy_config": {
+                                "proxy_host": "127.0.0.1",
+                                "proxy_port": "7891",
+                            },
+                        }
+                    ],
+                    "total": 201,
+                },
+            }
+        )
+
+    def post(self, url, *, json, headers, timeout):
+        self.calls.append(("POST", url, json, headers))
+        if url.endswith("/api/v2/proxy-list/list"):
+            if json["page"] == "1":
+                return FakeResponse(
+                    {"code": 0, "msg": "Success", "data": {"list": [], "total": 201}}
+                )
+            return FakeResponse(
+                {
+                    "code": 0,
+                    "msg": "Success",
+                    "data": {
+                        "list": [
+                            {
+                                "proxy_id": "existing-proxy",
+                                "type": "socks5",
+                                "host": "9.8.7.6",
+                                "port": "54321",
+                                "user": "testuser",
+                            }
+                        ],
+                        "total": 201,
+                    },
+                }
+            )
+        if url.endswith("/api/v2/proxy-list/create"):
+            return FakeResponse({"code": 0, "msg": "Success", "data": {"proxy_id": ["1"]}})
+        return FakeResponse({"code": 0, "msg": "Success", "data": {"id": "profile-001"}})
+
+
 def test_adspower_adds_proxy_list_entry_from_record():
     session = FakeSession()
     adapter = AdsPowerAdapter(
@@ -115,6 +173,33 @@ def test_adspower_reuses_existing_proxy_entry():
     assert not any(call[1].endswith("/api/v2/proxy-list/create") for call in session.calls)
 
 
+def test_adspower_reuses_existing_proxy_found_on_later_page():
+    session = PagedFakeSession()
+    adapter = AdsPowerAdapter(
+        base_url="http://127.0.0.1:50325",
+        api_key="key",
+        session=session,
+    )
+    record = ProxyRecord.from_mapping(
+        {
+            "id": "proxy-002",
+            "name": "devtest",
+            "type": "socks5",
+            "host": "9.8.7.6",
+            "port": 54321,
+            "username": "testuser",
+            "password": "testpass",
+        }
+    )
+
+    proxy_id = adapter.add_proxy(record)
+
+    assert proxy_id == "existing-proxy"
+    pages = [call[2]["page"] for call in session.calls if call[1].endswith("/api/v2/proxy-list/list")]
+    assert pages == ["1", "2"]
+    assert not any(call[1].endswith("/api/v2/proxy-list/create") for call in session.calls)
+
+
 def test_adspower_creates_profile_with_local_socks_proxy():
     session = FakeSession()
     adapter = AdsPowerAdapter(
@@ -187,4 +272,33 @@ def test_adspower_reuses_existing_profile_by_name():
     )
 
     assert profile_id == "existing-profile"
+    assert not any(call[1].endswith("/api/v1/user/create") for call in session.calls)
+
+
+def test_adspower_reuses_existing_profile_found_on_later_page():
+    session = PagedFakeSession()
+    adapter = AdsPowerAdapter(
+        base_url="http://127.0.0.1:50325",
+        api_key="key",
+        session=session,
+    )
+    record = ProxyRecord.from_mapping(
+        {
+            "id": "proxy-003",
+            "name": "local-socks",
+            "type": "socks5",
+            "host": "198.51.100.30",
+            "port": 1080,
+        }
+    )
+
+    profile_id = adapter.create_profile_with_local_proxy(
+        record,
+        local_host="127.0.0.1",
+        local_port=7891,
+    )
+
+    assert profile_id == "existing-profile"
+    pages = [call[2]["page"] for call in session.calls if call[1].endswith("/api/v1/user/list")]
+    assert pages == [1, 2]
     assert not any(call[1].endswith("/api/v1/user/create") for call in session.calls)

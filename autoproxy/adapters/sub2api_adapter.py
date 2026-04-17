@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import requests
@@ -19,7 +19,15 @@ class Sub2ApiAdapter:
     create_path: str = "/api/admin/proxies"
     timezone: str = "Asia/Shanghai"
     timeout: float = 10.0
-    session: Any = requests
+    session: Any = field(default_factory=requests.Session)
+    _token: str | None = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._token = self.token
+
+    @property
+    def _base_url(self) -> str:
+        return self.base_url.rstrip("/")
 
     def natural_key(self, record: ProxyRecord) -> str:
         return f"{record.type}|{record.host}|{record.port}|{record.username or ''}"
@@ -29,10 +37,10 @@ class Sub2ApiAdapter:
             raise ValueError("sub2api email and password are required for login")
         return {"email": self.email, "password": self.password}
 
-    def build_proxy_list_params(self) -> dict[str, Any]:
+    def build_proxy_list_params(self, *, page: int = 1, page_size: int = 20) -> dict[str, Any]:
         return {
-            "page": 1,
-            "page_size": 20,
+            "page": page,
+            "page_size": page_size,
             "status": "",
             "timezone": self.timezone,
         }
@@ -52,15 +60,15 @@ class Sub2ApiAdapter:
 
     def _build_headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
         return headers
 
     def login(self) -> str:
-        if self.token:
-            return self.token
+        if self._token:
+            return self._token
         response = self.session.post(
-            f"{self.base_url.rstrip('/')}{self.login_path}",
+            f"{self._base_url}{self.login_path}",
             json=self.build_login_payload(),
             headers={"Accept": "application/json", "Content-Type": "application/json"},
             timeout=self.timeout,
@@ -70,19 +78,34 @@ class Sub2ApiAdapter:
         token = data.get("data", {}).get("access_token")
         if not token:
             raise ValueError("sub2api login did not return an access token")
-        self.token = token
+        self._token = token
         return token
 
-    def list_proxies(self) -> dict[str, Any]:
+    def list_proxies(self, *, page: int = 1, page_size: int = 20) -> dict[str, Any]:
         self.login()
         response = self.session.get(
-            f"{self.base_url.rstrip('/')}{self.list_path}",
-            params=self.build_proxy_list_params(),
+            f"{self._base_url}{self.list_path}",
+            params=self.build_proxy_list_params(page=page, page_size=page_size),
             headers=self._build_headers(),
             timeout=self.timeout,
         )
         response.raise_for_status()
         return response.json()
+
+    def iter_proxy_items(self, *, page_size: int = 20):
+        page = 1
+        while True:
+            data = self.list_proxies(page=page, page_size=page_size)
+            page_data = data.get("data", {})
+            items = page_data.get("items", [])
+            yield from items
+            total = page_data.get("total")
+            if total is not None:
+                if page * page_size >= int(total):
+                    break
+            elif len(items) < page_size:
+                break
+            page += 1
 
     def sync_proxy(self, record: ProxyRecord) -> str:
         self.login()
@@ -91,7 +114,7 @@ class Sub2ApiAdapter:
             return existing
         payload = self.build_proxy_payload(record)
         response = self.session.post(
-            f"{self.base_url.rstrip('/')}{self.create_path}",
+            f"{self._base_url}{self.create_path}",
             json=payload,
             headers=self._build_headers(),
             timeout=self.timeout,
@@ -104,8 +127,7 @@ class Sub2ApiAdapter:
         return str(proxy_id)
 
     def find_proxy(self, record: ProxyRecord) -> str | None:
-        data = self.list_proxies()
-        for item in data.get("data", {}).get("items", []):
+        for item in self.iter_proxy_items():
             if (
                 item.get("protocol") == record.type
                 and item.get("host") == record.host
