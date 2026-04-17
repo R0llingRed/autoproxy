@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+config.local.json
+*.local.json
+.env
+
+docs/reports/
+docs/screenshots/
+*.bak
+
+proxies.txt

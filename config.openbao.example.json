@@ -1,0 +1,35 @@
+{
+  "proxy_source": {
+    "type": "openbao",
+    "base_url": "http://127.0.0.1:8200",
+    "token": "${OPENBAO_TOKEN}",
+    "mount": "secret",
+    "secret_path": "autoproxy/proxies/proxy-002",
+    "timeout": 10.0
+  },
+  "sub2api": {
+    "base_url": "http://127.0.0.1:8080",
+    "token": "${SUB2API_TOKEN}",
+    "email": "${SUB2API_EMAIL}",
+    "password": "${SUB2API_PASSWORD}",
+    "login_path": "/api/v1/auth/login",
+    "list_path": "/api/v1/admin/proxies",
+    "create_path": "/api/v1/admin/proxies",
+    "timezone": "Asia/Shanghai",
+    "timeout": 10.0
+  },
+  "clash": {
+    "base_proxy_name": "hs2-US",
+    "managed_group_name": "AUTO-CHAIN",
+    "managed_proxy_prefix": "auto-chain-",
+    "listener_start_port": 7890,
+    "listener_host": "127.0.0.1",
+    "config_path": "configs/clash-verge-standard.yaml"
+  },
+  "adspower": {
+    "base_url": "http://127.0.0.1:50325",
+    "api_key": "${ADSPOWER_API_KEY}",
+    "timeout": 10.0
+  },
+  "report_base_dir": "docs"
+}

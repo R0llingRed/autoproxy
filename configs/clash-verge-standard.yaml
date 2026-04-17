@@ -1,0 +1,28 @@
+mixed-port: 7890
+allow-lan: true
+mode: rule
+log-level: info
+proxies:
+- name: hs2-US
+  type: hysteria2
+  server: 198.51.100.10
+  port: 26006
+  password: example-password
+  sni: example.com
+- name: A
+  type: socks5
+  server: 198.51.100.20
+  port: 1080
+  username: a-user
+  password: a-pass
+proxy-groups:
+- name: MANUAL
+  type: select
+  proxies:
+  - A
+- name: AUTO-CHAIN
+  type: select
+  proxies: []
+rules:
+- MATCH,AUTO-CHAIN
+listeners: []
