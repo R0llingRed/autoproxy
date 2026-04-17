@@ -22,14 +22,17 @@ DEFAULT_CONFIG_PATHS = [
     Path("config.openbao.example.json"),
 ]
 CONFIG_DIR_KEY = "__config_dir"
-ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}")
 
 
 def _resolve_env(value: Any) -> Any:
     if isinstance(value, str):
         def replace(match: re.Match[str]) -> str:
             env_name = match.group(1)
+            default = match.group(2)
             if env_name not in os.environ:
+                if default is not None:
+                    return default
                 raise ValueError(f"required environment variable {env_name!r} is not set")
             return os.environ[env_name]
 
@@ -76,7 +79,9 @@ def build_proxy_source(config: dict[str, Any]):
                 base_url=source["base_url"],
                 token=source["token"],
                 mount=source.get("mount", "secret"),
-                secret_path=source["secret_path"],
+                read_path=source.get("read_path"),
+                import_prefix=source.get("import_prefix"),
+                secret_path=source.get("secret_path"),
                 timeout=source.get("timeout", 10.0),
             )
         raise ValueError(f"unsupported proxy_source type: {source_type}")
@@ -96,6 +101,11 @@ def build_clash(config: dict[str, Any]) -> ClashVergeAdapter:
         listener_start_port=clash.get("listener_start_port", 7890),
         listener_host=clash.get("listener_host", "127.0.0.1"),
         config_path=resolve_path(clash["config_path"], config),
+        reload_after_write=clash.get("reload_after_write", False),
+        controller_url=clash.get("controller_url"),
+        controller_secret=clash.get("controller_secret"),
+        reload_force=clash.get("reload_force", True),
+        timeout=clash.get("timeout", 10.0),
     )
 
 
@@ -115,6 +125,33 @@ def build_runner(config: dict[str, Any]) -> FlowRunner:
     )
 
 
+class StaticProxySource:
+    def __init__(self, payload: dict[str, Any]):
+        self.payload = payload
+
+    def fetch_proxy(self) -> dict[str, Any]:
+        return dict(self.payload)
+
+
+def load_selected_proxy(
+    config: dict[str, Any],
+    name: str | None,
+    proxy_id: str | None,
+) -> ProxyRecord:
+    source = build_proxy_source(config)
+    if proxy_id:
+        return ProxyRecord.from_mapping(source.fetch_proxy_by_id(proxy_id))
+    if name:
+        matches = source.find_proxies_by_name(name)
+        if not matches:
+            raise ValueError(f"no OpenBao proxy matched name {name!r}")
+        if len(matches) > 1:
+            ids = ", ".join(str(item.get("id")) for item in matches)
+            raise ValueError(f"multiple OpenBao proxies matched name {name!r}: {ids}")
+        return ProxyRecord.from_mapping(matches[0])
+    return ProxyRecord.from_mapping(source.fetch_proxy())
+
+
 def load_proxy(config: dict[str, Any]) -> ProxyRecord:
     return ProxyRecord.from_mapping(build_proxy_source(config).fetch_proxy())
 
@@ -123,8 +160,31 @@ def print_json(payload: Any) -> None:
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
 
-def cmd_openbao_get(config: dict[str, Any], _args: argparse.Namespace) -> int:
-    print_json(load_proxy(config).to_dict())
+def cmd_openbao_get(config: dict[str, Any], args: argparse.Namespace) -> int:
+    source = build_proxy_source(config)
+    if args.id:
+        print_json(ProxyRecord.from_mapping(source.fetch_proxy_by_id(args.id)).to_dict())
+        return 0
+    if args.name:
+        print_json(
+            [
+                ProxyRecord.from_mapping(item).to_dict()
+                for item in source.find_proxies_by_name(args.name)
+            ]
+        )
+        return 0
+    print_json([ProxyRecord.from_mapping(item).to_dict() for item in source.fetch_all_proxies()])
+    return 0
+
+
+def cmd_openbao_grep(config: dict[str, Any], args: argparse.Namespace) -> int:
+    source = build_proxy_source(config)
+    print_json(
+        [
+            ProxyRecord.from_mapping(item).to_dict()
+            for item in source.grep_proxies(args.keyword)
+        ]
+    )
     return 0
 
 
@@ -137,15 +197,15 @@ def cmd_openbao_import(config: dict[str, Any], args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_sub2api_sync(config: dict[str, Any], _args: argparse.Namespace) -> int:
-    record = load_proxy(config)
+def cmd_sub2api_sync(config: dict[str, Any], args: argparse.Namespace) -> int:
+    record = load_selected_proxy(config, args.name, args.id)
     proxy_id = build_sub2api(config).sync_proxy(record)
     print_json({"sub2api_proxy_id": proxy_id, "proxy": record.to_dict()})
     return 0
 
 
-def cmd_clash_write(config: dict[str, Any], _args: argparse.Namespace) -> int:
-    record = load_proxy(config)
+def cmd_clash_write(config: dict[str, Any], args: argparse.Namespace) -> int:
+    record = load_selected_proxy(config, args.name, args.id)
     result = build_clash(config).apply_proxy(record)
     print_json(
         {
@@ -153,27 +213,28 @@ def cmd_clash_write(config: dict[str, Any], _args: argparse.Namespace) -> int:
             "listener_name": result.listener_name,
             "local_host": result.local_host,
             "local_port": result.local_port,
+            "reload_status": getattr(result, "reload_status", "skipped"),
             "proxy": record.to_dict(),
         }
     )
     return 0
 
 
-def cmd_adspower_add_proxy(config: dict[str, Any], _args: argparse.Namespace) -> int:
+def cmd_adspower_add_proxy(config: dict[str, Any], args: argparse.Namespace) -> int:
     adspower = build_adspower(config)
     if adspower is None:
         raise ValueError("config does not define adspower")
-    record = load_proxy(config)
+    record = load_selected_proxy(config, args.name, args.id)
     proxy_id = adspower.add_proxy(record)
     print_json({"adspower_proxy_id": proxy_id, "proxy": record.to_dict()})
     return 0
 
 
-def cmd_adspower_create_profile(config: dict[str, Any], _args: argparse.Namespace) -> int:
+def cmd_adspower_create_profile(config: dict[str, Any], args: argparse.Namespace) -> int:
     adspower = build_adspower(config)
     if adspower is None:
         raise ValueError("config does not define adspower")
-    record = load_proxy(config)
+    record = load_selected_proxy(config, args.name, args.id)
     clash_result = build_clash(config).apply_proxy(record)
     profile_id = adspower.create_profile_with_local_proxy(
         record,
@@ -185,6 +246,7 @@ def cmd_adspower_create_profile(config: dict[str, Any], _args: argparse.Namespac
             "adspower_profile_id": profile_id,
             "local_host": clash_result.local_host,
             "local_port": clash_result.local_port,
+            "reload_status": getattr(clash_result, "reload_status", "skipped"),
             "proxy": record.to_dict(),
         }
     )
@@ -192,7 +254,12 @@ def cmd_adspower_create_profile(config: dict[str, Any], _args: argparse.Namespac
 
 
 def cmd_run(config: dict[str, Any], args: argparse.Namespace) -> int:
-    artifacts = build_runner(config).run(session_tag=args.session_tag)
+    runner = build_runner(config)
+    if args.id or args.name:
+        runner.proxy_source = StaticProxySource(
+            load_selected_proxy(config, args.name, args.id).to_dict()
+        )
+    artifacts = runner.run(session_tag=args.session_tag)
     print_json(artifacts.to_dict())
     return 0
 
@@ -207,6 +274,7 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command", required=True)
     command_handlers = {
         "openbao-get": cmd_openbao_get,
+        "openbao-grep": cmd_openbao_grep,
         "openbao-import": cmd_openbao_import,
         "sub2api-sync": cmd_sub2api_sync,
         "clash-write": cmd_clash_write,
@@ -214,9 +282,26 @@ def build_parser() -> argparse.ArgumentParser:
         "adspower-create-profile": cmd_adspower_create_profile,
         "run": cmd_run,
     }
+    selector_commands = {
+        "sub2api-sync",
+        "clash-write",
+        "adspower-add-proxy",
+        "adspower-create-profile",
+        "run",
+    }
     for name, handler in command_handlers.items():
         subparser = subcommands.add_parser(name)
         subparser.set_defaults(handler=handler)
+        if name == "openbao-get":
+            group = subparser.add_mutually_exclusive_group()
+            group.add_argument("--id", help="Read one OpenBao proxy by id under import_prefix.")
+            group.add_argument("--name", help="Read OpenBao proxies whose name matches exactly.")
+        if name == "openbao-grep":
+            subparser.add_argument("keyword", help="Search all OpenBao proxy fields under import_prefix.")
+        if name in selector_commands:
+            group = subparser.add_mutually_exclusive_group()
+            group.add_argument("--id", help="Select one OpenBao proxy by id under import_prefix.")
+            group.add_argument("--name", help="Select one OpenBao proxy whose name matches exactly.")
         if name == "openbao-import":
             subparser.add_argument("--file", required=True, help="Path to proxy JSON file.")
         if name == "run":

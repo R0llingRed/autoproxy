@@ -22,6 +22,7 @@ class FakeClashAdapter:
             node_name = "openbao-proxy-123"
             local_host = "127.0.0.1"
             local_port = 7890
+            reload_status = "reloaded"
 
         return Result()
 
@@ -40,6 +41,7 @@ def test_runner_executes_full_flow(tmp_path):
     assert artifacts.sub2api_proxy_id == "sub2api-42"
     assert artifacts.clash_node_name == "openbao-proxy-123"
     assert artifacts.validation.status == "SKIPPED"
+    assert artifacts.validation.checks["clash_reload_status"] == "reloaded"
 
 
 class FakeAdsPowerAdapter:

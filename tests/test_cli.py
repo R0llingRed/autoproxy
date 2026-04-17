@@ -32,6 +32,56 @@ class FakeProxySource:
         self.imported_file = str(path)
         return [{"secret_path": "autoproxy/proxies/proxy-010"}]
 
+    def fetch_all_proxies(self):
+        return [
+            {
+                "id": "proxy-001",
+                "name": "devtest",
+                "type": "socks5",
+                "host": "1.2.3.4",
+                "port": 5678,
+                "provider": "fake",
+            },
+            {
+                "id": "proxy-011",
+                "name": "backup",
+                "type": "socks5",
+                "host": "5.6.7.8",
+                "port": 6789,
+                "provider": "fake",
+            }
+        ]
+
+    def fetch_proxy_by_id(self, proxy_id):
+        return {
+            "id": proxy_id,
+            "name": "by-id",
+            "type": "socks5",
+            "host": "1.2.3.4",
+            "port": 5678,
+            "provider": "fake",
+        }
+
+    def find_proxies_by_name(self, name):
+        return [
+            {
+                "id": "proxy-002",
+                "name": name,
+                "type": "socks5",
+                "host": "1.2.3.4",
+                "port": 5678,
+                "provider": "fake",
+            }
+        ]
+
+    def grep_proxies(self, keyword):
+        normalized = keyword.casefold()
+        return [
+            item
+            for item in self.fetch_all_proxies()
+            if normalized in json.dumps(item, ensure_ascii=False).casefold()
+        ]
+
 
 class FakeSub2Api:
     def sync_proxy(self, record):
@@ -97,6 +147,22 @@ def test_resolve_env_expands_placeholders_inside_strings(monkeypatch):
     assert resolved == "C:/Users/example/AutoProxy/config.local.json"
 
 
+def test_resolve_env_uses_empty_default_for_optional_missing_env_var():
+    autoproxy_cli = load_cli_module()
+
+    resolved = autoproxy_cli._resolve_env("${AUTO_PROXY_OPTIONAL_TOKEN:-}")
+
+    assert resolved == ""
+
+
+def test_resolve_env_uses_default_value_for_optional_missing_env_var():
+    autoproxy_cli = load_cli_module()
+
+    resolved = autoproxy_cli._resolve_env("${AUTO_PROXY_OPTIONAL_HOST:-127.0.0.1}")
+
+    assert resolved == "127.0.0.1"
+
+
 def test_resolve_env_rejects_missing_env_var():
     autoproxy_cli = load_cli_module()
 
@@ -148,6 +214,65 @@ def test_builders_resolve_relative_paths_from_config_directory(tmp_path):
     assert runner.report_base_dir == config_dir / "docs"
 
 
+def test_build_proxy_source_uses_read_path_and_import_prefix(tmp_path):
+    autoproxy_cli = load_cli_module()
+    config_path = tmp_path / "config.local.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "proxy_source": {
+                    "type": "openbao",
+                    "base_url": "http://127.0.0.1:8200",
+                    "token": "token",
+                    "mount": "secret",
+                    "read_path": "autoproxy/proxies/proxy-001",
+                    "import_prefix": "autoproxy/proxies",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = autoproxy_cli.load_config(config_path)
+    source = autoproxy_cli.build_proxy_source(config)
+
+    assert source.read_path == "autoproxy/proxies/proxy-001"
+    assert source.import_prefix == "autoproxy/proxies"
+
+
+def test_build_clash_passes_reload_controller_settings(tmp_path):
+    autoproxy_cli = load_cli_module()
+    config_dir = tmp_path / "project"
+    config_dir.mkdir()
+    config_path = config_dir / "config.local.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "clash": {
+                    "base_proxy_name": "A",
+                    "config_path": "configs/active.yaml",
+                    "reload_after_write": True,
+                    "controller_url": "http://127.0.0.1:9090",
+                    "controller_secret": "secret",
+                    "reload_force": False,
+                    "timeout": 3.0,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = autoproxy_cli.load_config(config_path)
+    clash = autoproxy_cli.build_clash(config)
+
+    assert clash.config_path == config_dir / "configs" / "active.yaml"
+    assert clash.reload_after_write is True
+    assert clash.controller_url == "http://127.0.0.1:9090"
+    assert clash.controller_secret == "secret"
+    assert clash.reload_force is False
+    assert clash.timeout == 3.0
+
+
 def test_cli_openbao_get_outputs_proxy(tmp_path, monkeypatch, capsys):
     autoproxy_cli = load_cli_module()
     install_fakes(monkeypatch, autoproxy_cli)
@@ -156,7 +281,46 @@ def test_cli_openbao_get_outputs_proxy(tmp_path, monkeypatch, capsys):
     assert autoproxy_cli.main(["--config", str(config_path), "openbao-get"]) == 0
 
     output = json.loads(capsys.readouterr().out)
-    assert output["name"] == "devtest"
+    assert output[0]["name"] == "devtest"
+
+
+def test_cli_openbao_get_outputs_proxy_by_id(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    config_path = write_config(tmp_path)
+
+    assert autoproxy_cli.main(["--config", str(config_path), "openbao-get", "--id", "proxy-123"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["id"] == "proxy-123"
+    assert output["name"] == "by-id"
+
+
+def test_cli_openbao_get_outputs_proxies_by_name(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    config_path = write_config(tmp_path)
+
+    assert autoproxy_cli.main(["--config", str(config_path), "openbao-get", "--name", "devtest"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output[0]["id"] == "proxy-002"
+    assert output[0]["name"] == "devtest"
+
+
+def test_cli_openbao_grep_outputs_matching_full_records(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    config_path = write_config(tmp_path)
+
+    assert autoproxy_cli.main(["--config", str(config_path), "openbao-grep", "011"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert len(output) == 1
+    assert output[0]["id"] == "proxy-011"
+    assert output[0]["name"] == "backup"
+    assert output[0]["host"] == "5.6.7.8"
+    assert output[0]["provider"] == "fake"
 
 
 def test_cli_uses_config_local_json_by_default(tmp_path, monkeypatch, capsys):
@@ -168,7 +332,7 @@ def test_cli_uses_config_local_json_by_default(tmp_path, monkeypatch, capsys):
     assert autoproxy_cli.main(["openbao-get"]) == 0
 
     output = json.loads(capsys.readouterr().out)
-    assert output["name"] == "devtest"
+    assert output[0]["name"] == "devtest"
 
 
 def test_cli_openbao_import_outputs_written_paths(tmp_path, monkeypatch, capsys):
@@ -187,6 +351,82 @@ def test_cli_openbao_import_outputs_written_paths(tmp_path, monkeypatch, capsys)
 
     output = json.loads(capsys.readouterr().out)
     assert output["written"][0]["secret_path"] == "autoproxy/proxies/proxy-010"
+
+
+def test_cli_sub2api_sync_uses_selected_proxy_id(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    config_path = write_config(tmp_path)
+
+    assert autoproxy_cli.main(["--config", str(config_path), "sub2api-sync", "--id", "proxy-123"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["proxy"]["id"] == "proxy-123"
+    assert output["proxy"]["name"] == "by-id"
+
+
+def test_cli_clash_write_uses_selected_proxy_name(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    config_path = write_config(tmp_path)
+
+    assert autoproxy_cli.main(["--config", str(config_path), "clash-write", "--name", "devtest"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["proxy"]["id"] == "proxy-002"
+    assert output["proxy"]["name"] == "devtest"
+
+
+def test_cli_adspower_create_profile_uses_selected_proxy_id(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    config_path = write_config(tmp_path)
+
+    assert (
+        autoproxy_cli.main(
+            ["--config", str(config_path), "adspower-create-profile", "--id", "proxy-123"]
+        )
+        == 0
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["proxy"]["id"] == "proxy-123"
+    assert output["adspower_profile_id"] == "profile-7890"
+
+
+def test_cli_run_uses_selected_proxy_id(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    config_path = write_config(tmp_path)
+
+    assert (
+        autoproxy_cli.main(
+            ["--config", str(config_path), "run", "--session-tag", "cli-test", "--id", "proxy-123"]
+        )
+        == 0
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["proxy"]["id"] == "proxy-123"
+    assert output["proxy"]["name"] == "by-id"
+
+
+def test_selected_proxy_name_must_match_one_record(tmp_path, monkeypatch):
+    autoproxy_cli = load_cli_module()
+    config_path = write_config(tmp_path)
+
+    class EmptySource(FakeProxySource):
+        def find_proxies_by_name(self, name):
+            return []
+
+    monkeypatch.setattr(autoproxy_cli, "build_proxy_source", lambda config: EmptySource())
+
+    try:
+        autoproxy_cli.load_selected_proxy({"proxy_source": {}}, "missing", None)
+    except ValueError as exc:
+        assert "no OpenBao proxy matched name" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
 
 
 def test_cli_clash_write_outputs_listener(tmp_path, monkeypatch, capsys):

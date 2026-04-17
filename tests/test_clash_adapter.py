@@ -7,6 +7,27 @@ from autoproxy.adapters.clash_adapter import ClashVergeAdapter
 from autoproxy.models import ProxyRecord
 
 
+class FakeResponse:
+    def __init__(self, payload=None, status_code=204):
+        self._payload = payload or {}
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class FakeSession:
+    def __init__(self):
+        self.calls = []
+
+    def put(self, url, *, json, headers, timeout):
+        self.calls.append(("PUT", url, json, headers, timeout))
+        return FakeResponse()
+
+
 def base_config() -> str:
     return """
 mixed-port: 7890
@@ -215,6 +236,53 @@ def test_clash_adapter_writes_backup_and_atomic_config(tmp_path: Path):
     assert result.node_name == "auto-chain-txt-proxy-b"
     assert (tmp_path / "clash.yaml.bak").exists()
     assert parsed["proxy-groups"][-1]["name"] == "AUTO-CHAIN"
+
+
+def test_clash_adapter_reloads_running_config_after_write(tmp_path: Path):
+    config_path = tmp_path / "clash.yaml"
+    config_path.write_text(base_config(), encoding="utf-8")
+    session = FakeSession()
+    adapter = ClashVergeAdapter(
+        base_proxy_name="A",
+        config_path=config_path,
+        reload_after_write=True,
+        controller_url="http://127.0.0.1:9090",
+        controller_secret="secret",
+        session=session,
+    )
+    record = ProxyRecord.from_uri(
+        "socks5://user:pass@1.2.3.4:5678",
+        proxy_id="proxy-b",
+        provider="txt",
+    )
+
+    result = adapter.apply_proxy(record)
+
+    assert result.reload_status == "reloaded"
+    method, url, payload, headers, timeout = session.calls[0]
+    assert method == "PUT"
+    assert url == "http://127.0.0.1:9090/configs?force=true"
+    assert payload == {"path": str(config_path.resolve())}
+    assert headers["Authorization"] == "Bearer secret"
+    assert timeout == 10.0
+
+
+def test_clash_adapter_requires_controller_url_when_reload_enabled(tmp_path: Path):
+    config_path = tmp_path / "clash.yaml"
+    config_path.write_text(base_config(), encoding="utf-8")
+    adapter = ClashVergeAdapter(
+        base_proxy_name="A",
+        config_path=config_path,
+        reload_after_write=True,
+    )
+    record = ProxyRecord.from_uri(
+        "socks5://user:pass@1.2.3.4:5678",
+        proxy_id="proxy-b",
+        provider="txt",
+    )
+
+    with pytest.raises(ValueError, match="controller_url"):
+        adapter.apply_proxy(record)
 
 
 def test_clash_adapter_returns_listener_metadata(tmp_path: Path):

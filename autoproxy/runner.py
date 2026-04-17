@@ -37,6 +37,7 @@ class FlowRunner:
             checks={
                 "local_proxy_host": clash_result.local_host,
                 "local_proxy_port": clash_result.local_port,
+                "clash_reload_status": getattr(clash_result, "reload_status", "skipped"),
                 "adspower_profile_id": adspower_profile_id,
             },
         )

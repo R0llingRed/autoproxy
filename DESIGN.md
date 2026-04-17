@@ -22,6 +22,7 @@ AdsPower 创建浏览器环境并使用该本地 SOCKS 端口
 - 能独立执行每个模块，便于排错。
 - 支持 Windows、macOS、Linux 的常见本地运行方式。
 - Clash 中每条代理都有独立的本地 SOCKS listener。
+- 可选调用 Clash / Mihomo external controller reload，让新增 listener 立即生效。
 - AdsPower 环境只连接本地 SOCKS listener，不直接连接上游代理。
 - 重复运行时尽量复用已有记录，减少重复数据。
 
@@ -40,7 +41,7 @@ AdsPower 创建浏览器环境并使用该本地 SOCKS 端口
 OpenBao 是代理资产的来源。每条代理存为 KV v2 secret，例如：
 
 ```text
-secret/autoproxy/proxies/proxy-002
+secret/autoproxy/proxies/proxy-001
 ```
 
 数据示例：
@@ -54,6 +55,15 @@ secret/autoproxy/proxies/proxy-002
   "username": "testuser",
   "password": "testpass",
   "country": "US"
+}
+```
+
+配置中 `read_path` 表示主流程读取的单条代理，`import_prefix` 表示批量导入写入的目录。这样读取和写入边界是分开的：
+
+```json
+{
+  "read_path": "autoproxy/proxies/proxy-001",
+  "import_prefix": "autoproxy/proxies"
 }
 ```
 
@@ -104,16 +114,20 @@ python3 autoproxy.py
 
 ```bash
 python3 autoproxy.py openbao-get
+python3 autoproxy.py openbao-get --id proxy-010
+python3 autoproxy.py openbao-get --name devtest
 python3 autoproxy.py openbao-import --file examples/openbao-proxies.example.json
 python3 autoproxy.py sub2api-sync
-python3 autoproxy.py clash-write
+python3 autoproxy.py sub2api-sync --id proxy-010
+python3 autoproxy.py clash-write --name devtest
 python3 autoproxy.py adspower-add-proxy
-python3 autoproxy.py adspower-create-profile
-python3 autoproxy.py run --session-tag test001
+python3 autoproxy.py adspower-create-profile --id proxy-010
+python3 autoproxy.py run --session-tag test001 --id proxy-010
 ```
 
 默认配置读取顺序是 `config.local.json`、`config.openbao.json`、`config.openbao.example.json`。
 配置文件中的相对路径按配置文件所在目录解析；所有本地文件按 UTF-8 读写。
+写入类命令如果不指定 `--id` / `--name`，使用 `read_path`；指定 `--name` 时要求唯一匹配。
 
 ## 时序图
 
@@ -130,7 +144,8 @@ participant "AdsPower Local API" as AdsPower
 participant "报告文件" as Report
 
 U -> CLI: run --session-tag test001
-CLI -> Bao: GET /v1/secret/data/autoproxy/proxies/{id}
+CLI -> Bao: LIST /v1/secret/metadata/{import_prefix}
+CLI -> Bao: GET /v1/secret/data/{import_prefix}/{id}
 Bao --> CLI: 代理记录
 
 CLI -> Sub2API: 查询是否已有代理
@@ -144,6 +159,10 @@ end
 CLI -> Clash: 读取 YAML 配置
 CLI -> Clash: 写入 auto-chain 节点和 auto-listener
 Clash --> CLI: 本地 SOCKS 地址
+opt reload_after_write=true
+  CLI -> Clash: PUT /configs?force=true，path=当前配置绝对路径
+  Clash --> CLI: reload 成功
+end
 
 CLI -> AdsPower: 查询是否已有代理
 alt 已存在

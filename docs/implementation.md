@@ -2,7 +2,7 @@
 
 ## 当前包含的能力
 
-- OpenBao 代理源：读取 KV v2 记录，例如 `secret/autoproxy/proxies/proxy-002`。
+- OpenBao 代理源：读取 KV v2 记录，例如 `secret/autoproxy/proxies/proxy-001`。
 - OpenBao JSON 导入：从本地 JSON 文件批量写入代理记录。
 - 本地 TXT 代理源：保留为调试入口，按行读取代理 URI。
 - `sub2api` 适配器：通过 `/api/v1/auth/login` 登录，查询 `/api/v1/admin/proxies`，并提交代理记录。
@@ -13,7 +13,7 @@
 ## 预期流程
 
 1. 运行 `python3 autoproxy.py run --session-tag test001`。
-2. 脚本读取配置中的 OpenBao secret path，并把数据规范化为代理记录。
+2. 脚本读取配置中的 OpenBao `read_path`，并把数据规范化为代理记录。
 3. 代理记录同步到 `sub2api`。
 4. Clash Verge 配置被更新：导入代理 `B` 会变成 `auto-chain-*`，通过已配置的第一跳代理出站，并获得一个本地 SOCKS listener。
 5. AdsPower 导入上游代理，并创建以代理 `name` 命名的 profile；profile 代理指向 `127.0.0.1:<listener_port>`。
@@ -25,11 +25,14 @@
 - CLI 默认按 `config.local.json`、`config.openbao.json`、`config.openbao.example.json` 的顺序读取配置。
 - 配置中的相对路径按配置文件所在目录解析；Windows 下推荐在 JSON 里使用 `/` 或 `${USERPROFILE}` 形式。
 - 文件读写统一使用 UTF-8，避免 Windows 中文环境下报告和配置乱码。
-- 导出 `OPENBAO_TOKEN`，并让 `proxy_source.secret_path` 指向要读取的 OpenBao 代理记录。
+- 导出 `OPENBAO_TOKEN`，并让 `proxy_source.read_path` 指向要读取的 OpenBao 代理记录。
+- 让 `proxy_source.import_prefix` 指向批量导入时要写入的目录，例如 `autoproxy/proxies`。
+- 环境变量占位符支持 `${VAR}` 必填和 `${VAR:-default}` 可选默认值；OpenBao token 是导入和读取必需项。
 - 导出 `SUB2API_EMAIL` 和 `SUB2API_PASSWORD`，或者直接提供 token。
 - 如果你的 sub2api 部署和默认接口不同，需要确认代理创建接口和字段名。
 - 更新 `configs/clash-verge-standard.yaml`，确保 `clash.base_proxy_name` 指向真实第一跳代理，例如 `hs2-US`。
-- 如果要直接写入真实 Clash Verge 配置，把 `clash.config_path` 指向真实 profile 文件。
+- 如果要直接写入真实 Clash Verge 配置，把 `clash.config_path` 指向当前正在使用的真实 profile 文件。
+- 如需让新增 listener 立即生效，开启 `clash.reload_after_write` 并配置 `clash.controller_url`。
 
 ## Clash 链路形态
 
@@ -71,6 +74,17 @@ listeners:
 
 AdsPower profile 指向这些本地 SOCKS listener，而不是直接指向上游代理。
 
+如果 `clash.reload_after_write=true`，适配器会在原子写入后调用：
+
+```http
+PUT /configs?force=true
+Content-Type: application/json
+
+{"path": "<clash.config_path 的绝对路径>"}
+```
+
+这一步依赖 Clash / Mihomo 的 external controller。`clash.config_path` 必须是 core 当前正在使用的配置文件，否则 reload 后也不会加载脚本写入的 listener。
+
 ## CLI 命令
 
 每个模块都可以单独运行：
@@ -87,6 +101,24 @@ python3 autoproxy.py --config config.openbao.example.json run --session-tag test
 
 如果当前目录存在 `config.local.json`，上面的 `--config ...` 可以省略。
 
+`openbao-get` 默认列出 `import_prefix` 下的全部代理。也可以指定单条：
+
+```bash
+python3 autoproxy.py openbao-get --id proxy-010
+python3 autoproxy.py openbao-get --name devtest
+```
+
+写入类命令也支持指定单条代理：
+
+```bash
+python3 autoproxy.py sub2api-sync --id proxy-010
+python3 autoproxy.py clash-write --name devtest
+python3 autoproxy.py adspower-create-profile --id proxy-010
+python3 autoproxy.py run --session-tag test001 --id proxy-010
+```
+
+不指定 `--id` / `--name` 时，这些命令使用 `read_path`。指定 `--name` 时必须精确匹配到唯一一条记录。
+
 Windows PowerShell 下可以使用：
 
 ```powershell
@@ -101,7 +133,7 @@ py -3 .\autoproxy.py run --session-tag test001
 代理记录存放在 KV v2 下：路径里使用稳定 ID，secret 数据里放一个可读的 `name`：
 
 ```bash
-bao kv put secret/autoproxy/proxies/proxy-002 \
+bao kv put secret/autoproxy/proxies/proxy-001 \
   name=devtest \
   type=socks5 \
   host=1.2.3.4 \
@@ -114,8 +146,19 @@ bao kv put secret/autoproxy/proxies/proxy-002 \
 脚本通过下面的 API 读取：
 
 ```http
-GET /v1/secret/data/autoproxy/proxies/proxy-002
+GET /v1/secret/data/autoproxy/proxies/proxy-001
 X-Vault-Token: <token>
 ```
 
 `name` 会用于生成节点名称，例如 `openbao-devtest` 和 `auto-chain-openbao-devtest`。
+
+OpenBao 配置拆成两个路径：
+
+```json
+{
+  "read_path": "autoproxy/proxies/proxy-001",
+  "import_prefix": "autoproxy/proxies"
+}
+```
+
+`read_path` 是需要单条代理的完整流程所读取的记录。`import_prefix` 是导入和列表查询目录，JSON 中不同 `id` 会写入不同条目，例如 `proxy-010` 会写入 `secret/autoproxy/proxies/proxy-010`。`openbao-get` 不指定参数时会列出 `import_prefix` 下全部代理。旧字段 `secret_path` 仅作为兼容旧配置保留。

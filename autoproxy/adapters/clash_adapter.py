@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
+import requests
 import yaml
 
 from autoproxy.models import ProxyRecord
@@ -18,6 +19,7 @@ class ClashApplyResult:
     listener_name: str
     local_host: str
     local_port: int
+    reload_status: str = "skipped"
 
 
 @dataclass(slots=True)
@@ -29,6 +31,12 @@ class ClashVergeAdapter:
     managed_listener_prefix: str = "auto-listener-"
     listener_start_port: int = 7890
     listener_host: str = "127.0.0.1"
+    reload_after_write: bool = False
+    controller_url: str | None = None
+    controller_secret: str | None = None
+    reload_force: bool = True
+    timeout: float = 10.0
+    session: Any = field(default_factory=requests.Session)
 
     def chain_node_name(self, record: ProxyRecord) -> str:
         return f"{self.managed_proxy_prefix}{record.node_name}"
@@ -146,7 +154,30 @@ class ClashVergeAdapter:
         current = self.config_path.read_text(encoding="utf-8") if self.config_path.exists() else ""
         updated = self.merge_config(current, record)
         self._write_config_atomic(updated)
-        return self.listener_for_record(updated, record)
+        result = self.listener_for_record(updated, record)
+        if self.reload_after_write:
+            self.reload_config()
+            result.reload_status = "reloaded"
+        return result
+
+    def reload_config(self) -> None:
+        if self.config_path is None:
+            raise ValueError("config_path is required for Clash reload")
+        if not self.controller_url:
+            raise ValueError("clash controller_url is required when reload_after_write is enabled")
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        if self.controller_secret:
+            headers["Authorization"] = f"Bearer {self.controller_secret}"
+        url = f"{self.controller_url.rstrip('/')}/configs"
+        if self.reload_force:
+            url = f"{url}?force=true"
+        response = self.session.put(
+            url,
+            json={"path": str(self.config_path.resolve())},
+            headers=headers,
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
 
     def _write_config_atomic(self, content: str) -> None:
         assert self.config_path is not None

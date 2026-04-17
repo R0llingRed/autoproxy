@@ -17,15 +17,20 @@ class FakeSession:
         self.last_url = None
         self.last_headers = None
         self.posts = []
+        self.requests = []
 
     def get(self, url, *, headers, timeout):
         self.last_url = url
         self.last_headers = headers
+        proxy_id = url.rstrip("/").split("/")[-1]
         return FakeResponse(
             {
                 "data": {
                     "data": {
-                        "name": "devtest",
+                        "name": {
+                            "proxy-001": "devtest",
+                            "proxy-002": "backup",
+                        }.get(proxy_id, "file-proxy"),
                         "type": "socks5",
                         "host": "1.2.3.4",
                         "port": 5678,
@@ -41,6 +46,10 @@ class FakeSession:
         self.posts.append((url, json, headers))
         return FakeResponse({"data": {"version": 1}})
 
+    def request(self, method, url, *, headers, timeout):
+        self.requests.append((method, url, headers, timeout))
+        return FakeResponse({"data": {"keys": ["proxy-001", "proxy-002", "nested/"]}})
+
 
 def test_openbao_source_reads_kv_v2_proxy():
     session = FakeSession()
@@ -48,15 +57,16 @@ def test_openbao_source_reads_kv_v2_proxy():
         base_url="http://127.0.0.1:8200",
         token="secret-token",
         mount="secret",
-        secret_path="autoproxy/proxies/proxy-002",
+        read_path="autoproxy/proxies/proxy-001",
+        import_prefix="autoproxy/proxies",
         session=session,
     )
 
     payload = source.fetch_proxy()
 
-    assert session.last_url == "http://127.0.0.1:8200/v1/secret/data/autoproxy/proxies/proxy-002"
+    assert session.last_url == "http://127.0.0.1:8200/v1/secret/data/autoproxy/proxies/proxy-001"
     assert session.last_headers["X-Vault-Token"] == "secret-token"
-    assert payload["id"] == "proxy-002"
+    assert payload["id"] == "proxy-001"
     assert payload["name"] == "devtest"
     assert payload["provider"] == "openbao"
     assert payload["host"] == "1.2.3.4"
@@ -68,7 +78,8 @@ def test_openbao_source_writes_proxy_to_kv_v2():
         base_url="http://127.0.0.1:8200",
         token="secret-token",
         mount="secret",
-        secret_path="autoproxy/proxies/proxy-002",
+        read_path="autoproxy/proxies/proxy-001",
+        import_prefix="autoproxy/proxies",
         session=session,
     )
 
@@ -121,7 +132,8 @@ def test_openbao_source_imports_proxy_json_file(tmp_path):
         base_url="http://127.0.0.1:8200",
         token="secret-token",
         mount="secret",
-        secret_path="autoproxy/proxies/proxy-002",
+        read_path="autoproxy/proxies/proxy-001",
+        import_prefix="autoproxy/proxies",
         session=session,
     )
 
@@ -132,3 +144,116 @@ def test_openbao_source_imports_proxy_json_file(tmp_path):
         "autoproxy/proxies/proxy-011",
     ]
     assert len(session.posts) == 2
+
+
+def test_openbao_source_lists_proxy_ids_from_import_prefix():
+    session = FakeSession()
+    source = OpenBaoProxySource(
+        base_url="http://127.0.0.1:8200",
+        token="secret-token",
+        mount="secret",
+        import_prefix="autoproxy/proxies",
+        session=session,
+    )
+
+    proxy_ids = source.list_proxy_ids()
+
+    assert proxy_ids == ["proxy-001", "proxy-002"]
+    method, url, headers, timeout = session.requests[0]
+    assert method == "LIST"
+    assert url == "http://127.0.0.1:8200/v1/secret/metadata/autoproxy/proxies"
+    assert headers["X-Vault-Token"] == "secret-token"
+    assert timeout == 10.0
+
+
+def test_openbao_source_fetches_proxy_by_id_from_import_prefix():
+    session = FakeSession()
+    source = OpenBaoProxySource(
+        base_url="http://127.0.0.1:8200",
+        token="secret-token",
+        mount="secret",
+        import_prefix="autoproxy/proxies",
+        session=session,
+    )
+
+    payload = source.fetch_proxy_by_id("proxy-002")
+
+    assert session.last_url == "http://127.0.0.1:8200/v1/secret/data/autoproxy/proxies/proxy-002"
+    assert payload["id"] == "proxy-002"
+    assert payload["name"] == "backup"
+
+
+def test_openbao_source_fetches_all_proxies():
+    session = FakeSession()
+    source = OpenBaoProxySource(
+        base_url="http://127.0.0.1:8200",
+        token="secret-token",
+        mount="secret",
+        import_prefix="autoproxy/proxies",
+        session=session,
+    )
+
+    payload = source.fetch_all_proxies()
+
+    assert [item["id"] for item in payload] == ["proxy-001", "proxy-002"]
+
+
+def test_openbao_source_finds_proxies_by_name():
+    session = FakeSession()
+    source = OpenBaoProxySource(
+        base_url="http://127.0.0.1:8200",
+        token="secret-token",
+        mount="secret",
+        import_prefix="autoproxy/proxies",
+        session=session,
+    )
+
+    payload = source.find_proxies_by_name("backup")
+
+    assert [item["id"] for item in payload] == ["proxy-002"]
+
+
+def test_openbao_source_grep_matches_any_field_case_insensitive():
+    session = FakeSession()
+    source = OpenBaoProxySource(
+        base_url="http://127.0.0.1:8200",
+        token="secret-token",
+        mount="secret",
+        import_prefix="autoproxy/proxies",
+        session=session,
+    )
+
+    payload = source.grep_proxies("BACKUP")
+
+    assert [item["id"] for item in payload] == ["proxy-002"]
+
+
+def test_openbao_source_grep_returns_empty_list_when_no_field_matches():
+    session = FakeSession()
+    source = OpenBaoProxySource(
+        base_url="http://127.0.0.1:8200",
+        token="secret-token",
+        mount="secret",
+        import_prefix="autoproxy/proxies",
+        session=session,
+    )
+
+    payload = source.grep_proxies("not-found")
+
+    assert payload == []
+
+
+def test_openbao_source_keeps_secret_path_as_legacy_read_path():
+    session = FakeSession()
+    source = OpenBaoProxySource(
+        base_url="http://127.0.0.1:8200",
+        token="secret-token",
+        mount="secret",
+        secret_path="autoproxy/proxies/proxy-002",
+        session=session,
+    )
+
+    payload = source.fetch_proxy()
+
+    assert session.last_url == "http://127.0.0.1:8200/v1/secret/data/autoproxy/proxies/proxy-002"
+    assert payload["id"] == "proxy-002"

@@ -112,6 +112,12 @@ $env:ADSPOWER_API_KEY = "..."
 
 如果环境变量没有设置，程序会直接报错。
 
+占位符规则：
+
+- `${OPENBAO_TOKEN}` 表示必填，缺失会报错。
+- `${SUB2API_TOKEN:-}` 表示可选，缺失时使用空字符串。
+- `${HOST:-127.0.0.1}` 表示可选，缺失时使用默认值。
+
 ## OpenBao 数据格式
 
 推荐每条代理存一条 OpenBao KV v2 secret：
@@ -128,6 +134,22 @@ bao kv put secret/autoproxy/proxies/proxy-001 \
 ```
 
 `name` 会用于生成 sub2api、Clash 和 AdsPower 中的名称。
+
+配置里 OpenBao 路径分成两个字段：
+
+```json
+{
+  "proxy_source": {
+    "read_path": "autoproxy/proxies/proxy-001",
+    "import_prefix": "autoproxy/proxies"
+  }
+}
+```
+
+- `read_path` 是当前主流程读取和同步的单条代理。
+- `import_prefix` 是 JSON 批量导入时写入的目录。
+- 例如 JSON 里有 `{"id": "proxy-010", ...}`，会写入 `secret/autoproxy/proxies/proxy-010`。
+- 旧字段 `secret_path` 仍兼容，但不再推荐。
 
 ## JSON 导入 OpenBao
 
@@ -184,41 +206,72 @@ JSON 可以是单个对象：
 
 ## 常用命令
 
-读取 OpenBao 当前配置中的代理：
+列出 OpenBao `import_prefix` 下全部代理：
 
 ```bash
 python3 autoproxy.py openbao-get
+```
+
+读取指定 ID：
+
+```bash
+python3 autoproxy.py openbao-get --id proxy-010
+```
+
+按名称精确匹配：
+
+```bash
+python3 autoproxy.py openbao-get --name devtest
+```
+
+搜索任意字段，返回包含关键词的完整条目：
+
+```bash
+python3 autoproxy.py openbao-grep "011"
+python3 autoproxy.py openbao-grep "devtest"
 ```
 
 同步到 sub2api：
 
 ```bash
 python3 autoproxy.py sub2api-sync
+python3 autoproxy.py sub2api-sync --id proxy-010
+python3 autoproxy.py sub2api-sync --name devtest
 ```
 
 写入 Clash Verge 配置：
 
 ```bash
 python3 autoproxy.py clash-write
+python3 autoproxy.py clash-write --id proxy-010
+python3 autoproxy.py clash-write --name devtest
 ```
 
 添加到 AdsPower 代理库：
 
 ```bash
 python3 autoproxy.py adspower-add-proxy
+python3 autoproxy.py adspower-add-proxy --id proxy-010
+python3 autoproxy.py adspower-add-proxy --name devtest
 ```
 
 创建 AdsPower 环境：
 
 ```bash
 python3 autoproxy.py adspower-create-profile
+python3 autoproxy.py adspower-create-profile --id proxy-010
+python3 autoproxy.py adspower-create-profile --name devtest
 ```
 
 执行完整流程：
 
 ```bash
 python3 autoproxy.py run --session-tag test001
+python3 autoproxy.py run --session-tag test001 --id proxy-010
+python3 autoproxy.py run --session-tag test001 --name devtest
 ```
+
+写入类命令不指定 `--id` / `--name` 时使用 `read_path`。指定 `--name` 时必须精确匹配到唯一一条代理，避免同名误写。
 
 Windows 下把 `python3 autoproxy.py` 换成 `py -3 .\autoproxy.py` 即可。
 
@@ -245,11 +298,35 @@ AdsPower -> 127.0.0.1:7890 -> Clash -> hs2-US -> 导入代理
 
 每条代理会占用一个本地 SOCKS 端口，从 `listener_start_port` 开始递增。
 
+## Clash Reload
+
+脚本写入 Clash YAML 后，运行中的 Clash / Mihomo core 不一定会自动加载新 listener。要让新增端口生效，推荐开启 external controller reload：
+
+```json
+{
+  "clash": {
+    "config_path": "configs/clash-verge-standard.yaml",
+    "reload_after_write": true,
+    "controller_url": "http://127.0.0.1:9090",
+    "controller_secret": "",
+    "reload_force": true
+  }
+}
+```
+
+关键点：
+
+- `config_path` 必须指向 Clash Verge 当前正在使用的配置文件，而不是一份普通模板。
+- reload 请求会把 `config_path` 转成绝对路径后调用 `PUT /configs?force=true`。
+- 如果 Clash external controller 设置了 secret，请填写 `controller_secret`，或者写成 `${CLASH_CONTROLLER_SECRET}` 并设置环境变量。
+- 如果 Clash Verge 使用增强配置或运行时合并配置，需要确认 core 实际加载的是哪个 profile 文件。
+- reload 只负责让配置生效；如果旧连接需要断开，后续可以再扩展 `DELETE /connections`。
+
 ## 注意事项
 
 - AdsPower 免费版只有 2 个环境，超过会创建失败。
-- 当前会写 Clash 配置文件，但不会自动 reload Clash。
-- 当前 OpenBao 主流程一次读取一个 `secret_path`。
+- 默认只写 Clash 配置文件；开启 `reload_after_write` 后会调用 Clash external controller reload。
+- 当前 OpenBao 主流程一次读取一个 `read_path`；批量导入写入 `import_prefix` 下的不同条目。
 - sub2api 和 AdsPower 会尽量复用已有记录，避免重复创建。
 - Windows 下请确认 Clash Verge / AdsPower / OpenBao 的本地 API 端口允许当前用户访问。
 - 所有 JSON、YAML、报告文件按 UTF-8 读写，避免 Windows 中文环境下乱码。
