@@ -10,7 +10,7 @@ class TxtProxySource:
     path: Path
 
     def fetch_proxy(self) -> dict[str, str]:
-        for line in self.path.read_text().splitlines():
+        for line in self.path.read_text(encoding="utf-8").splitlines():
             entry = line.strip()
             if not entry or entry.startswith("#"):
                 continue

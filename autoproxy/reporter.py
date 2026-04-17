@@ -19,9 +19,10 @@ class Reporter:
         json_path = report_dir / f"{artifacts.session_tag}.json"
         markdown_path = report_dir / f"{artifacts.session_tag}.md"
         json_path.write_text(
-            json.dumps(artifacts.to_dict(), indent=2, ensure_ascii=False) + "\n"
+            json.dumps(artifacts.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
         )
-        markdown_path.write_text(self._render_markdown(artifacts))
+        markdown_path.write_text(self._render_markdown(artifacts), encoding="utf-8")
         return {"json": json_path, "markdown": markdown_path}
 
     def _render_markdown(self, artifacts: RunArtifacts) -> str:

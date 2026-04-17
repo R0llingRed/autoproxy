@@ -23,6 +23,8 @@
 
 - 复制 `config.openbao.example.json` 为 `config.local.json`，再填写本地服务地址和路径。
 - CLI 默认按 `config.local.json`、`config.openbao.json`、`config.openbao.example.json` 的顺序读取配置。
+- 配置中的相对路径按配置文件所在目录解析；Windows 下推荐在 JSON 里使用 `/` 或 `${USERPROFILE}` 形式。
+- 文件读写统一使用 UTF-8，避免 Windows 中文环境下报告和配置乱码。
 - 导出 `OPENBAO_TOKEN`，并让 `proxy_source.secret_path` 指向要读取的 OpenBao 代理记录。
 - 导出 `SUB2API_EMAIL` 和 `SUB2API_PASSWORD`，或者直接提供 token。
 - 如果你的 sub2api 部署和默认接口不同，需要确认代理创建接口和字段名。
@@ -84,6 +86,13 @@ python3 autoproxy.py --config config.openbao.example.json run --session-tag test
 ```
 
 如果当前目录存在 `config.local.json`，上面的 `--config ...` 可以省略。
+
+Windows PowerShell 下可以使用：
+
+```powershell
+py -3 .\autoproxy.py openbao-get
+py -3 .\autoproxy.py run --session-tag test001
+```
 
 `sub2api` 和 AdsPower 在创建前会先尝试复用已有记录，避免重复测试时堆积相同代理或 profile。
 

@@ -72,7 +72,7 @@ class OpenBaoProxySource:
         }
 
     def write_proxies_from_file(self, path: Path) -> list[dict[str, Any]]:
-        payload = json.loads(path.read_text())
+        payload = json.loads(path.read_text(encoding="utf-8"))
         records = payload if isinstance(payload, list) else [payload]
         results = []
         for index, record in enumerate(records, start=1):

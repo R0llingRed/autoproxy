@@ -20,6 +20,7 @@ AdsPower 创建浏览器环境并使用该本地 SOCKS 端口
 - 每条代理有稳定 ID 和可读名称。
 - 可以通过 JSON 文件批量导入代理到 OpenBao。
 - 能独立执行每个模块，便于排错。
+- 支持 Windows、macOS、Linux 的常见本地运行方式。
 - Clash 中每条代理都有独立的本地 SOCKS listener。
 - AdsPower 环境只连接本地 SOCKS listener，不直接连接上游代理。
 - 重复运行时尽量复用已有记录，减少重复数据。
@@ -112,6 +113,7 @@ python3 autoproxy.py run --session-tag test001
 ```
 
 默认配置读取顺序是 `config.local.json`、`config.openbao.json`、`config.openbao.example.json`。
+配置文件中的相对路径按配置文件所在目录解析；所有本地文件按 UTF-8 读写。
 
 ## 时序图
 

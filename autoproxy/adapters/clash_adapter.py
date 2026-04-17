@@ -143,7 +143,7 @@ class ClashVergeAdapter:
                 local_host=self.listener_host,
                 local_port=self.listener_start_port,
             )
-        current = self.config_path.read_text() if self.config_path.exists() else ""
+        current = self.config_path.read_text(encoding="utf-8") if self.config_path.exists() else ""
         updated = self.merge_config(current, record)
         self._write_config_atomic(updated)
         return self.listener_for_record(updated, record)
@@ -162,7 +162,7 @@ class ClashVergeAdapter:
             handle.write(content)
             temp_path = Path(handle.name)
         try:
-            yaml.safe_load(temp_path.read_text())
+            yaml.safe_load(temp_path.read_text(encoding="utf-8"))
             os.replace(temp_path, self.config_path)
         except Exception:
             temp_path.unlink(missing_ok=True)

@@ -88,6 +88,15 @@ def test_resolve_env_expands_nested_list_dict(monkeypatch):
     assert resolved == {"items": [{"token": "secret-token"}]}
 
 
+def test_resolve_env_expands_placeholders_inside_strings(monkeypatch):
+    autoproxy_cli = load_cli_module()
+    monkeypatch.setenv("AUTO_PROXY_HOME", "C:/Users/example")
+
+    resolved = autoproxy_cli._resolve_env("${AUTO_PROXY_HOME}/AutoProxy/config.local.json")
+
+    assert resolved == "C:/Users/example/AutoProxy/config.local.json"
+
+
 def test_resolve_env_rejects_missing_env_var():
     autoproxy_cli = load_cli_module()
 
@@ -97,6 +106,46 @@ def test_resolve_env_rejects_missing_env_var():
         assert "AUTO_PROXY_MISSING_TOKEN" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_load_config_records_config_directory_and_reads_utf8(tmp_path):
+    autoproxy_cli = load_cli_module()
+    config_dir = tmp_path / "配置"
+    config_dir.mkdir()
+    config_path = config_dir / "config.local.json"
+    config_path.write_text('{"label": "中文"}', encoding="utf-8")
+
+    config = autoproxy_cli.load_config(config_path)
+
+    assert config["label"] == "中文"
+    assert config[autoproxy_cli.CONFIG_DIR_KEY] == config_dir
+
+
+def test_builders_resolve_relative_paths_from_config_directory(tmp_path):
+    autoproxy_cli = load_cli_module()
+    config_dir = tmp_path / "project"
+    config_dir.mkdir()
+    config_path = config_dir / "config.local.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "proxy_source": {"type": "txt", "path": "data/proxies.txt"},
+                "sub2api": {"base_url": "http://127.0.0.1:8080", "token": "token"},
+                "clash": {"config_path": "configs/clash.yaml"},
+                "report_base_dir": "docs",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = autoproxy_cli.load_config(config_path)
+    source = autoproxy_cli.build_proxy_source(config)
+    clash = autoproxy_cli.build_clash(config)
+    runner = autoproxy_cli.build_runner(config)
+
+    assert source.path == config_dir / "data" / "proxies.txt"
+    assert clash.config_path == config_dir / "configs" / "clash.yaml"
+    assert runner.report_base_dir == config_dir / "docs"
 
 
 def test_cli_openbao_get_outputs_proxy(tmp_path, monkeypatch, capsys):

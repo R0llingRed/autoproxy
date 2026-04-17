@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -20,14 +21,19 @@ DEFAULT_CONFIG_PATHS = [
     Path("config.openbao.json"),
     Path("config.openbao.example.json"),
 ]
+CONFIG_DIR_KEY = "__config_dir"
+ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 def _resolve_env(value: Any) -> Any:
-    if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
-        env_name = value[2:-1]
-        if env_name not in os.environ:
-            raise ValueError(f"required environment variable {env_name!r} is not set")
-        return os.environ[env_name]
+    if isinstance(value, str):
+        def replace(match: re.Match[str]) -> str:
+            env_name = match.group(1)
+            if env_name not in os.environ:
+                raise ValueError(f"required environment variable {env_name!r} is not set")
+            return os.environ[env_name]
+
+        return ENV_PATTERN.sub(replace, value)
     if isinstance(value, dict):
         return {key: _resolve_env(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -36,7 +42,17 @@ def _resolve_env(value: Any) -> Any:
 
 
 def load_config(path: Path) -> dict[str, Any]:
-    return _resolve_env(json.loads(path.read_text()))
+    resolved_path = path.expanduser().resolve()
+    config = _resolve_env(json.loads(resolved_path.read_text(encoding="utf-8")))
+    config[CONFIG_DIR_KEY] = resolved_path.parent
+    return config
+
+
+def resolve_path(value: str | Path, config: dict[str, Any]) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    return Path(config.get(CONFIG_DIR_KEY, Path.cwd())) / path
 
 
 def resolve_config_path(path: str | None) -> Path:
@@ -54,7 +70,7 @@ def build_proxy_source(config: dict[str, Any]):
     if source:
         source_type = source["type"]
         if source_type == "txt":
-            return TxtProxySource(path=Path(source["path"]).expanduser())
+            return TxtProxySource(path=resolve_path(source["path"], config))
         if source_type == "openbao":
             return OpenBaoProxySource(
                 base_url=source["base_url"],
@@ -79,7 +95,7 @@ def build_clash(config: dict[str, Any]) -> ClashVergeAdapter:
         managed_proxy_prefix=clash.get("managed_proxy_prefix", "auto-chain-"),
         listener_start_port=clash.get("listener_start_port", 7890),
         listener_host=clash.get("listener_host", "127.0.0.1"),
-        config_path=Path(clash["config_path"]).expanduser(),
+        config_path=resolve_path(clash["config_path"], config),
     )
 
 
@@ -94,7 +110,7 @@ def build_runner(config: dict[str, Any]) -> FlowRunner:
         proxy_source=build_proxy_source(config),
         sub2api=build_sub2api(config),
         clash=build_clash(config),
-        report_base_dir=Path(config["report_base_dir"]).expanduser(),
+        report_base_dir=resolve_path(config["report_base_dir"], config),
         adspower=build_adspower(config),
     )
 

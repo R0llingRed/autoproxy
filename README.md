@@ -30,6 +30,19 @@ AdsPower 不直接使用上游代理，而是使用 Clash 暴露的本地 SOCKS 
 - Clash Verge / Mihomo
 - AdsPower，本地 API 示例地址：`http://127.0.0.1:50325`
 
+Windows、macOS、Linux 都可以运行本脚本。Windows 下建议使用 PowerShell 和 Python Launcher：
+
+```powershell
+py -3 --version
+py -3 -m pip install -r requirements.txt
+```
+
+macOS / Linux：
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
 ## 配置
 
 主要配置文件是：
@@ -44,6 +57,12 @@ config.openbao.example.json
 cp config.openbao.example.json config.local.json
 ```
 
+Windows PowerShell：
+
+```powershell
+Copy-Item config.openbao.example.json config.local.json
+```
+
 默认情况下，CLI 会按顺序读取：
 
 ```text
@@ -52,6 +71,27 @@ config.local.json -> config.openbao.json -> config.openbao.example.json
 
 因此日常使用时通常不需要传 `--config`。如果要指定其他配置文件，再使用 `--config <path>`。
 
+配置文件里的相对路径会按配置文件所在目录解析，不依赖当前终端所在目录。路径建议使用 `/`，Python 在 Windows 下也能识别，例如：
+
+```json
+{
+  "clash": {
+    "config_path": "configs/clash-verge-standard.yaml"
+  },
+  "report_base_dir": "docs"
+}
+```
+
+如果要引用用户目录，推荐使用 `${VAR}` 占位符：
+
+```json
+{
+  "clash": {
+    "config_path": "${USERPROFILE}/AppData/Roaming/io.github.clash-verge-rev.clash-verge-rev/profiles/autoproxy.yaml"
+  }
+}
+```
+
 需要设置环境变量：
 
 ```bash
@@ -59,6 +99,15 @@ export OPENBAO_TOKEN='...'
 export SUB2API_EMAIL='admin@sub2api.local'
 export SUB2API_PASSWORD='...'
 export ADSPOWER_API_KEY='...'
+```
+
+Windows PowerShell：
+
+```powershell
+$env:OPENBAO_TOKEN = "..."
+$env:SUB2API_EMAIL = "admin@sub2api.local"
+$env:SUB2API_PASSWORD = "..."
+$env:ADSPOWER_API_KEY = "..."
 ```
 
 如果环境变量没有设置，程序会直接报错。
@@ -92,6 +141,12 @@ examples/openbao-proxies.example.json
 
 ```bash
 python3 autoproxy.py openbao-import --file examples/openbao-proxies.example.json
+```
+
+Windows PowerShell：
+
+```powershell
+py -3 .\autoproxy.py openbao-import --file examples/openbao-proxies.example.json
 ```
 
 JSON 可以是单个对象：
@@ -165,6 +220,8 @@ python3 autoproxy.py adspower-create-profile
 python3 autoproxy.py run --session-tag test001
 ```
 
+Windows 下把 `python3 autoproxy.py` 换成 `py -3 .\autoproxy.py` 即可。
+
 ## Clash 链式代理
 
 配置里需要已有第一跳代理，例如：
@@ -194,4 +251,6 @@ AdsPower -> 127.0.0.1:7890 -> Clash -> hs2-US -> 导入代理
 - 当前会写 Clash 配置文件，但不会自动 reload Clash。
 - 当前 OpenBao 主流程一次读取一个 `secret_path`。
 - sub2api 和 AdsPower 会尽量复用已有记录，避免重复创建。
+- Windows 下请确认 Clash Verge / AdsPower / OpenBao 的本地 API 端口允许当前用户访问。
+- 所有 JSON、YAML、报告文件按 UTF-8 读写，避免 Windows 中文环境下乱码。
 - 文档统一使用中文；功能更新时请同步更新本 README。
