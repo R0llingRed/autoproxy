@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -145,7 +145,7 @@ class CamoufoxAdapter:
         bindings = self._read_bindings()
         bindings[result.proxy_id] = {
             **result.to_dict(),
-            "last_launched_at": datetime.now(UTC).isoformat(),
+            "last_launched_at": datetime.now(timezone.utc).isoformat(),
         }
         self.bindings_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = self.bindings_path.with_suffix(f"{self.bindings_path.suffix}.tmp")

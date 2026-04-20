@@ -1,4 +1,5 @@
 from autoproxy.adapters.openbao_source import OpenBaoProxySource
+from requests import HTTPError
 
 
 class FakeResponse:
@@ -10,6 +11,16 @@ class FakeResponse:
 
     def json(self):
         return self._payload
+
+
+class NotFoundResponse:
+    status_code = 404
+
+    def raise_for_status(self):
+        raise HTTPError("404 Client Error: Not Found", response=self)
+
+    def json(self):
+        return {"errors": []}
 
 
 class FakeSession:
@@ -49,6 +60,12 @@ class FakeSession:
     def request(self, method, url, *, headers, timeout):
         self.requests.append((method, url, headers, timeout))
         return FakeResponse({"data": {"keys": ["proxy-001", "proxy-002", "nested/"]}})
+
+
+class MissingPrefixSession(FakeSession):
+    def request(self, method, url, *, headers, timeout):
+        self.requests.append((method, url, headers, timeout))
+        return NotFoundResponse()
 
 
 def test_openbao_source_reads_kv_v2_proxy():
@@ -164,6 +181,20 @@ def test_openbao_source_lists_proxy_ids_from_import_prefix():
     assert url == "http://127.0.0.1:8200/v1/secret/metadata/autoproxy/proxies"
     assert headers["X-Vault-Token"] == "secret-token"
     assert timeout == 10.0
+
+
+def test_openbao_source_returns_empty_list_when_import_prefix_is_missing():
+    source = OpenBaoProxySource(
+        base_url="http://127.0.0.1:8200",
+        token="secret-token",
+        mount="secret",
+        import_prefix="autoproxy/proxies",
+        session=MissingPrefixSession(),
+    )
+
+    assert source.list_proxy_ids() == []
+    assert source.fetch_all_proxies() == []
+    assert source.grep_proxies("real") == []
 
 
 def test_openbao_source_fetches_proxy_by_id_from_import_prefix():

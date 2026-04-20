@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from requests import HTTPError
 
 
 @dataclass(slots=True)
@@ -76,7 +77,12 @@ class OpenBaoProxySource:
             headers={"X-Vault-Token": self.token, "Accept": "application/json"},
             timeout=self.timeout,
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            if getattr(exc.response, "status_code", None) == 404:
+                return []
+            raise
         keys = response.json().get("data", {}).get("keys", [])
         return [str(key) for key in keys if not str(key).endswith("/")]
 

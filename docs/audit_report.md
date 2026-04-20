@@ -295,7 +295,7 @@ COMMANDS = {
 - **`autoproxy/adapters/__init__.py`** 目前只有 52 字节（几乎空），建议把 Protocol 定义放进来作为公开接口。
 - **`pyproject.toml`** 缺少 `[tool.ruff]` 或 `[tool.mypy]` 配置，项目目前无 lint/type-check CI 守护。
 - **`configs/clash-verge-standard.yaml.bak`** 是由 `_write_config_atomic` 生成的备份文件，不应被 Git 跟踪，建议加入 `.gitignore`。
-- **`config.openbao.example.json`** 和 `config.local.example.json` 内容完全一样，可以合并为一个 `config.example.json`，加注释说明各字段。
+- **`config.local.example.json` 已删除**，当前保留 `config.openbao.example.json` 作为唯一示例配置入口。
 - `ValidationResult.to_dict()` 手动拼字典但父类 `ProxyRecord.to_dict()` 用 `asdict(self)`——风格不统一。`ValidationResult` 也可以直接用 `asdict(self)`。
 
 ---
