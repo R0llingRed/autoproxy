@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from autoproxy.adapters.adspower_adapter import AdsPowerAdapter
+from autoproxy.adapters.camoufox_adapter import CamoufoxAdapter
 from autoproxy.adapters.clash_adapter import ClashVergeAdapter
 from autoproxy.adapters.openbao_source import OpenBaoProxySource
 from autoproxy.adapters.sub2api_adapter import Sub2ApiAdapter
@@ -119,13 +120,39 @@ def build_adspower(config: dict[str, Any]) -> AdsPowerAdapter | None:
     return AdsPowerAdapter(**config["adspower"])
 
 
+def build_camoufox(config: dict[str, Any]) -> CamoufoxAdapter:
+    camoufox = config.get("camoufox", {})
+    return CamoufoxAdapter(
+        profiles_dir=resolve_path(camoufox.get("profiles_dir", "data/camoufox/profiles"), config),
+        templates_dir=resolve_path(camoufox.get("templates_dir", "data/camoufox/templates"), config),
+        bindings_path=resolve_path(camoufox.get("bindings_path", "data/camoufox/bindings.json"), config),
+        headless=camoufox.get("headless"),
+        geoip=camoufox.get("geoip"),
+        humanize=camoufox.get("humanize"),
+        start_url=camoufox.get("start_url"),
+        timeout=camoufox.get("timeout", 30.0),
+        os=camoufox.get("os"),
+        locale=camoufox.get("locale"),
+        block_images=camoufox.get("block_images"),
+    )
+
+
 def build_runner(config: dict[str, Any]) -> FlowRunner:
+    browser = config.get("browser")
+    adspower = build_adspower(config)
+    browser_adapter = None
+    if browser == "camoufox":
+        adspower = None
+        browser_adapter = build_camoufox(config)
+    elif browser not in {None, "adspower"}:
+        raise ValueError(f"unsupported browser: {browser}")
     return FlowRunner(
         proxy_source=build_proxy_source(config),
         sub2api=build_sub2api(config),
         clash=build_clash(config),
         report_base_dir=resolve_path(config["report_base_dir"], config),
-        adspower=build_adspower(config),
+        adspower=adspower,
+        browser_adapter=browser_adapter,
     )
 
 
@@ -257,6 +284,38 @@ def cmd_adspower_create_profile(config: dict[str, Any], args: argparse.Namespace
     return 0
 
 
+def cmd_camoufox_launch(config: dict[str, Any], args: argparse.Namespace) -> int:
+    record = load_selected_proxy(config, args.name, args.id)
+    clash_result = build_clash(config).apply_proxy(record)
+    result = build_camoufox(config).launch_with_local_proxy(
+        record,
+        local_host=clash_result.local_host,
+        local_port=clash_result.local_port,
+        template_name=args.template,
+        keep_open=not args.no_wait,
+    )
+    print_json(result.to_dict())
+    return 0
+
+
+def cmd_camoufox_templates(config: dict[str, Any], args: argparse.Namespace) -> int:
+    camoufox = build_camoufox(config)
+    if args.name:
+        print_json(camoufox.get_template(args.name))
+    else:
+        print_json(camoufox.list_templates())
+    return 0
+
+
+def cmd_camoufox_profiles(config: dict[str, Any], args: argparse.Namespace) -> int:
+    camoufox = build_camoufox(config)
+    if args.id:
+        print_json(camoufox.get_binding(args.id))
+    else:
+        print_json(camoufox.list_bindings())
+    return 0
+
+
 def cmd_run(config: dict[str, Any], args: argparse.Namespace) -> int:
     runner = build_runner(config)
     if args.id or args.name:
@@ -284,6 +343,9 @@ def build_parser() -> argparse.ArgumentParser:
         "clash-write": cmd_clash_write,
         "adspower-add-proxy": cmd_adspower_add_proxy,
         "adspower-create-profile": cmd_adspower_create_profile,
+        "camoufox-launch": cmd_camoufox_launch,
+        "camoufox-templates": cmd_camoufox_templates,
+        "camoufox-profiles": cmd_camoufox_profiles,
         "run": cmd_run,
     }
     selector_commands = {
@@ -291,6 +353,7 @@ def build_parser() -> argparse.ArgumentParser:
         "clash-write",
         "adspower-add-proxy",
         "adspower-create-profile",
+        "camoufox-launch",
         "run",
     }
     for name, handler in command_handlers.items():
@@ -308,6 +371,17 @@ def build_parser() -> argparse.ArgumentParser:
             group.add_argument("--name", help="Select one OpenBao proxy whose name matches exactly.")
         if name == "openbao-import":
             subparser.add_argument("--file", required=True, help="Path to proxy JSON file.")
+        if name == "camoufox-launch":
+            subparser.add_argument("--template", help="Use a Camoufox template by name.")
+            subparser.add_argument(
+                "--no-wait",
+                action="store_true",
+                help="Launch and close immediately after opening start_url; intended for tests.",
+            )
+        if name == "camoufox-templates":
+            subparser.add_argument("--name", help="Read one Camoufox template by name.")
+        if name == "camoufox-profiles":
+            subparser.add_argument("--id", help="Read one Camoufox binding by proxy id.")
         if name == "run":
             subparser.add_argument("--session-tag", required=True)
     return parser

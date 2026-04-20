@@ -120,6 +120,9 @@ class RunArtifacts:
     screenshots: list[str] = field(default_factory=list)
     adspower_proxy_id: str = ""
     adspower_profile_id: str = ""
+    browser: str = ""
+    browser_profile_dir: str = ""
+    browser_start_url: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -131,4 +134,7 @@ class RunArtifacts:
             "screenshots": self.screenshots,
             "adspower_proxy_id": self.adspower_proxy_id,
             "adspower_profile_id": self.adspower_profile_id,
+            "browser": self.browser,
+            "browser_profile_dir": self.browser_profile_dir,
+            "browser_start_url": self.browser_start_url,
         }

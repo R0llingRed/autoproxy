@@ -39,5 +39,16 @@
     "api_key": "${ADSPOWER_API_KEY:-}",
     "timeout": 10.0
   },
+  "browser": "adspower",
+  "camoufox": {
+    "profiles_dir": "data/camoufox/profiles",
+    "templates_dir": "data/camoufox/templates",
+    "bindings_path": "data/camoufox/bindings.json",
+    "headless": false,
+    "geoip": true,
+    "humanize": true,
+    "start_url": "https://www.browserscan.net",
+    "timeout": 30.0
+  },
   "report_base_dir": "docs"
 }

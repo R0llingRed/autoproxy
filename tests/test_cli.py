@@ -107,6 +107,56 @@ class FakeAdsPower:
         return f"profile-{local_port}"
 
 
+class FakeCamoufox:
+    def list_templates(self):
+        return [{"name": "desktop-humanized", "geoip": True}]
+
+    def get_template(self, name):
+        return {"name": name, "geoip": True, "headless": False}
+
+    def list_bindings(self):
+        return [
+            {
+                "proxy_id": "proxy-001",
+                "proxy_name": "devtest",
+                "local_host": "127.0.0.1",
+                "local_port": 7890,
+                "proxy_server": "socks5://127.0.0.1:7890",
+                "profile_dir": "/tmp/profile",
+                "start_url": "https://www.browserscan.net",
+            }
+        ]
+
+    def get_binding(self, proxy_id):
+        return {"proxy_id": proxy_id, "local_port": 7890}
+
+    def launch_with_local_proxy(
+        self,
+        record,
+        *,
+        local_host,
+        local_port,
+        template_name=None,
+        keep_open=True,
+    ):
+        return type(
+            "Result",
+            (),
+            {
+                "to_dict": lambda self: {
+                    "browser": "camoufox",
+                    "proxy_id": record.id,
+                    "template_name": template_name,
+                    "local_host": local_host,
+                    "local_port": local_port,
+                    "proxy_server": f"socks5://{local_host}:{local_port}",
+                    "profile_dir": "/tmp/profile",
+                    "start_url": "https://www.browserscan.net",
+                }
+            },
+        )()
+
+
 def write_config(tmp_path: Path) -> Path:
     config = {
         "proxy_source": {"type": "fake"},
@@ -125,6 +175,7 @@ def install_fakes(monkeypatch, autoproxy_cli):
     monkeypatch.setattr(autoproxy_cli, "build_sub2api", lambda config: FakeSub2Api())
     monkeypatch.setattr(autoproxy_cli, "build_clash", lambda config: FakeClash())
     monkeypatch.setattr(autoproxy_cli, "build_adspower", lambda config: FakeAdsPower())
+    monkeypatch.setattr(autoproxy_cli, "build_camoufox", lambda config: FakeCamoufox())
 
 
 def test_resolve_env_expands_nested_list_dict(monkeypatch):
@@ -400,6 +451,74 @@ def test_cli_adspower_create_profile_uses_selected_proxy_id(tmp_path, monkeypatc
     output = json.loads(capsys.readouterr().out)
     assert output["proxy"]["id"] == "proxy-123"
     assert output["adspower_profile_id"] == "profile-7890"
+
+
+def test_cli_camoufox_launch_uses_selected_proxy_id(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    config_path = write_config(tmp_path)
+
+    assert (
+        autoproxy_cli.main(
+            [
+                "--config",
+                str(config_path),
+                "camoufox-launch",
+                "--id",
+                "proxy-123",
+                "--template",
+                "desktop-humanized",
+                "--no-wait",
+            ]
+        )
+        == 0
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["browser"] == "camoufox"
+    assert output["proxy_id"] == "proxy-123"
+    assert output["template_name"] == "desktop-humanized"
+    assert output["proxy_server"] == "socks5://127.0.0.1:7890"
+
+
+def test_cli_camoufox_templates_outputs_one_template(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    config_path = write_config(tmp_path)
+
+    assert (
+        autoproxy_cli.main(
+            [
+                "--config",
+                str(config_path),
+                "camoufox-templates",
+                "--name",
+                "desktop-humanized",
+            ]
+        )
+        == 0
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["name"] == "desktop-humanized"
+    assert output["geoip"] is True
+
+
+def test_cli_camoufox_profiles_outputs_selected_binding(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    config_path = write_config(tmp_path)
+
+    assert (
+        autoproxy_cli.main(
+            ["--config", str(config_path), "camoufox-profiles", "--id", "proxy-123"]
+        )
+        == 0
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["proxy_id"] == "proxy-123"
+    assert output["local_port"] == 7890
 
 
 def test_cli_run_uses_selected_proxy_id(tmp_path, monkeypatch, capsys):
