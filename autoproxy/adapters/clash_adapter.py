@@ -65,7 +65,7 @@ class ClashVergeAdapter:
 
     def merge_config(self, current_config: str, record: ProxyRecord) -> str:
         config = yaml.safe_load(current_config) or {}
-        proxies = list(config.get("proxies") or [])
+        proxies = self._refresh_managed_proxies(list(config.get("proxies") or []))
         if not any(item.get("name") == self.base_proxy_name for item in proxies):
             raise ValueError(f"Base proxy {self.base_proxy_name!r} was not found")
 
@@ -96,6 +96,17 @@ class ClashVergeAdapter:
         config["rules"] = self._merge_rules(config.get("rules"))
 
         return yaml.safe_dump(config, allow_unicode=True, sort_keys=False)
+
+    def _refresh_managed_proxies(self, proxies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        refreshed = []
+        for item in proxies:
+            if str(item.get("name", "")).startswith(self.managed_proxy_prefix):
+                updated = dict(item)
+                updated["dialer-proxy"] = self.base_proxy_name
+                refreshed.append(updated)
+            else:
+                refreshed.append(item)
+        return refreshed
 
     def _merge_listeners(
         self,
@@ -173,6 +184,7 @@ class ClashVergeAdapter:
         script_path = self.resolve_script_path()
         current_script = script_path.read_text(encoding="utf-8") if script_path.exists() else ""
         entries = self._managed_entries_from_script(current_script)
+        entries = self._refresh_managed_entries(entries)
         node = self.build_chained_proxy_node(record)
         listener_name = self.listener_name(record)
         existing = next(
@@ -212,6 +224,25 @@ class ClashVergeAdapter:
             local_host=self.listener_host,
             local_port=port,
         )
+
+    def _refresh_managed_entries(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        refreshed = []
+        for entry in entries:
+            if not isinstance(entry.get("node"), dict):
+                refreshed.append(entry)
+                continue
+            updated_entry = dict(entry)
+            node = dict(entry["node"])
+            node["dialer-proxy"] = self.base_proxy_name
+            updated_entry["node"] = node
+            if isinstance(entry.get("listener"), dict):
+                listener = dict(entry["listener"])
+                listener["type"] = "socks"
+                listener["listen"] = self.listener_host
+                listener["proxy"] = node.get("name")
+                updated_entry["listener"] = listener
+            refreshed.append(updated_entry)
+        return refreshed
 
     def resolve_script_path(self) -> Path:
         if self.script_path is not None:

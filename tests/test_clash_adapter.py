@@ -114,6 +114,45 @@ proxy-groups:
     assert "user-owned" in proxy_names
 
 
+def test_clash_adapter_refreshes_existing_managed_chain_nodes_to_current_base_proxy():
+    adapter = ClashVergeAdapter(base_proxy_name="new-hop")
+    record = ProxyRecord.from_uri(
+        "socks5://new:newpass@5.6.7.8:6789",
+        proxy_id="proxy-c",
+        provider="txt",
+    )
+    current = """
+mixed-port: 7890
+proxies:
+  - name: new-hop
+    type: socks5
+    server: 10.0.0.1
+    port: 1080
+  - name: auto-chain-txt-old
+    type: socks5
+    server: 9.9.9.9
+    port: 9999
+    dialer-proxy: old-hop
+  - name: user-owned
+    type: http
+    server: 8.8.8.8
+    port: 8080
+proxy-groups:
+  - name: AUTO-CHAIN
+    type: select
+    proxies:
+      - auto-chain-txt-old
+"""
+
+    updated = adapter.merge_config(current, record)
+    parsed = yaml.safe_load(updated)
+    proxies = {item["name"]: item for item in parsed["proxies"]}
+
+    assert proxies["auto-chain-txt-old"]["dialer-proxy"] == "new-hop"
+    assert proxies["auto-chain-txt-proxy-c"]["dialer-proxy"] == "new-hop"
+    assert proxies["user-owned"]["server"] == "8.8.8.8"
+
+
 def test_clash_adapter_adds_listener_ports_incrementally():
     adapter = ClashVergeAdapter(base_proxy_name="A", listener_start_port=7890)
     first = ProxyRecord.from_uri(
@@ -390,6 +429,93 @@ def test_clash_adapter_script_mode_increments_listener_ports(tmp_path: Path):
     assert '"name": "auto-listener-txt-second"' in script
     assert '"port": 7891' in script
     assert '"port": 7892' in script
+
+
+def test_clash_adapter_script_refreshes_existing_entries_to_current_base_proxy(tmp_path: Path):
+    script_path = tmp_path / "Script.js"
+    adapter = ClashVergeAdapter(
+        base_proxy_name="new-hop",
+        write_mode="script",
+        script_path=script_path,
+        listener_start_port=7891,
+    )
+    stale_script = adapter.render_extension_script(
+        [
+            {
+                "node": {
+                    "name": "auto-chain-openbao-old",
+                    "type": "socks5",
+                    "server": "9.9.9.9",
+                    "port": 9999,
+                    "dialer-proxy": "old-hop",
+                },
+                "listener": {
+                    "name": "auto-listener-openbao-old",
+                    "type": "socks",
+                    "listen": "127.0.0.1",
+                    "port": 7891,
+                    "proxy": "auto-chain-openbao-old",
+                },
+            }
+        ]
+    )
+    script_path.write_text(stale_script, encoding="utf-8")
+    record = ProxyRecord.from_uri(
+        "socks5://5.6.7.8:6789",
+        proxy_id="second",
+        provider="txt",
+        name="second",
+    )
+
+    adapter.apply_proxy(record)
+    script = script_path.read_text(encoding="utf-8")
+
+    assert '"dialer-proxy": "old-hop"' not in script
+    assert script.count('"dialer-proxy": "new-hop"') == 2
+
+
+def test_clash_adapter_script_refreshes_existing_listeners_to_current_host(tmp_path: Path):
+    script_path = tmp_path / "Script.js"
+    adapter = ClashVergeAdapter(
+        base_proxy_name="new-hop",
+        write_mode="script",
+        script_path=script_path,
+        listener_host="127.0.0.2",
+        listener_start_port=7891,
+    )
+    stale_script = adapter.render_extension_script(
+        [
+            {
+                "node": {
+                    "name": "auto-chain-openbao-old",
+                    "type": "socks5",
+                    "server": "9.9.9.9",
+                    "port": 9999,
+                    "dialer-proxy": "new-hop",
+                },
+                "listener": {
+                    "name": "auto-listener-openbao-old",
+                    "type": "socks",
+                    "listen": "127.0.0.1",
+                    "port": 7891,
+                    "proxy": "auto-chain-openbao-old",
+                },
+            }
+        ]
+    )
+    script_path.write_text(stale_script, encoding="utf-8")
+    record = ProxyRecord.from_uri(
+        "socks5://5.6.7.8:6789",
+        proxy_id="second",
+        provider="txt",
+        name="second",
+    )
+
+    adapter.apply_proxy(record)
+    script = script_path.read_text(encoding="utf-8")
+
+    assert '"listen": "127.0.0.1"' not in script
+    assert script.count('"listen": "127.0.0.2"') == 2
 
 
 def test_clash_adapter_script_removes_stale_yaml_managed_nodes_and_listeners():
