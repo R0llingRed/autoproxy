@@ -78,15 +78,13 @@ class CamoufoxAdapter:
             "persistent_context": True,
             "user_data_dir": str(profile_dir),
         }
-        with factory(**camoufox_kwargs) as browser:
-            page = browser.new_page()
-            page.goto(result.start_url, timeout=int(self.timeout * 1000))
-            if keep_open:
-                try:
-                    while True:
-                        time.sleep(1)
-                except KeyboardInterrupt:
-                    pass
+        try:
+            self._open_browser(factory, camoufox_kwargs, result.start_url, keep_open=keep_open)
+        except Exception as exc:
+            if not (camoufox_kwargs.get("geoip") is True and self._is_invalid_ip_error(exc)):
+                raise
+            retry_kwargs = {**camoufox_kwargs, "geoip": False}
+            self._open_browser(factory, retry_kwargs, result.start_url, keep_open=keep_open)
         return result
 
     def list_templates(self) -> list[dict[str, Any]]:
@@ -154,6 +152,27 @@ class CamoufoxAdapter:
             encoding="utf-8",
         )
         tmp_path.replace(self.bindings_path)
+
+    def _open_browser(
+        self,
+        factory: Any,
+        camoufox_kwargs: dict[str, Any],
+        start_url: str,
+        *,
+        keep_open: bool,
+    ) -> None:
+        with factory(**camoufox_kwargs) as browser:
+            page = browser.new_page()
+            page.goto(start_url, timeout=int(self.timeout * 1000))
+            if keep_open:
+                try:
+                    while True:
+                        time.sleep(1)
+                except KeyboardInterrupt:
+                    pass
+
+    def _is_invalid_ip_error(self, exc: Exception) -> bool:
+        return exc.__class__.__name__ == "InvalidIP"
 
     def _read_bindings(self) -> dict[str, dict[str, Any]]:
         if not self.bindings_path.exists():
