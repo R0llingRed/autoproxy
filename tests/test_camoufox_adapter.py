@@ -41,30 +41,6 @@ class FakeCamoufoxFactory:
         return instance
 
 
-class InvalidIP(Exception):
-    pass
-
-
-class FailingEnterCamoufoxInstance(FakeCamoufoxInstance):
-    def __init__(self, exc):
-        super().__init__()
-        self.exc = exc
-
-    def __enter__(self):
-        raise self.exc
-
-
-class InvalidIpThenSuccessFactory(FakeCamoufoxFactory):
-    def __call__(self, **kwargs):
-        self.calls.append(kwargs)
-        if kwargs.get("geoip") is True:
-            instance = FailingEnterCamoufoxInstance(InvalidIP("Failed to get IP address"))
-        else:
-            instance = FakeCamoufoxInstance()
-        self.instances.append(instance)
-        return instance
-
-
 def make_record() -> ProxyRecord:
     return ProxyRecord.from_mapping(
         {
@@ -190,8 +166,8 @@ def test_camoufox_template_values_override_builtin_defaults(tmp_path):
     assert factory.calls[0]["humanize"] is False
 
 
-def test_camoufox_retries_without_geoip_when_public_ip_lookup_fails(tmp_path):
-    factory = InvalidIpThenSuccessFactory()
+def test_camoufox_disables_geoip_before_launching_through_local_proxy(tmp_path):
+    factory = FakeCamoufoxFactory()
     adapter = CamoufoxAdapter(
         profiles_dir=tmp_path / "profiles",
         templates_dir=tmp_path / "templates",
@@ -206,6 +182,7 @@ def test_camoufox_retries_without_geoip_when_public_ip_lookup_fails(tmp_path):
         keep_open=False,
     )
 
-    assert [call["geoip"] for call in factory.calls] == [True, False]
-    assert factory.calls[1]["proxy"] == {"server": "socks5://127.0.0.1:7891"}
-    assert factory.instances[1].pages[0].visited == ["https://www.browserscan.net"]
+    assert len(factory.calls) == 1
+    assert factory.calls[0]["geoip"] is False
+    assert factory.calls[0]["proxy"] == {"server": "socks5://127.0.0.1:7891"}
+    assert factory.instances[0].pages[0].visited == ["https://www.browserscan.net"]

@@ -72,19 +72,15 @@ class CamoufoxAdapter:
         )
         self._upsert_binding(result)
         factory = self.camoufox_factory or self._load_camoufox_factory()
+        if launch_options.get("geoip") is True and self._is_local_proxy_host(local_host):
+            launch_options["geoip"] = False
         camoufox_kwargs = {
             **launch_options,
             "proxy": {"server": proxy_server},
             "persistent_context": True,
             "user_data_dir": str(profile_dir),
         }
-        try:
-            self._open_browser(factory, camoufox_kwargs, result.start_url, keep_open=keep_open)
-        except Exception as exc:
-            if not (camoufox_kwargs.get("geoip") is True and self._is_invalid_ip_error(exc)):
-                raise
-            retry_kwargs = {**camoufox_kwargs, "geoip": False}
-            self._open_browser(factory, retry_kwargs, result.start_url, keep_open=keep_open)
+        self._open_browser(factory, camoufox_kwargs, result.start_url, keep_open=keep_open)
         return result
 
     def list_templates(self) -> list[dict[str, Any]]:
@@ -171,8 +167,8 @@ class CamoufoxAdapter:
                 except KeyboardInterrupt:
                     pass
 
-    def _is_invalid_ip_error(self, exc: Exception) -> bool:
-        return exc.__class__.__name__ == "InvalidIP"
+    def _is_local_proxy_host(self, host: str) -> bool:
+        return host.casefold() in {"127.0.0.1", "localhost", "::1"}
 
     def _read_bindings(self) -> dict[str, dict[str, Any]]:
         if not self.bindings_path.exists():
