@@ -1,4 +1,5 @@
 import json
+import warnings
 
 from autoproxy.adapters.camoufox_adapter import CamoufoxAdapter
 from autoproxy.models import ProxyRecord
@@ -13,9 +14,10 @@ class FakePage:
 
 
 class FakeCamoufoxInstance:
-    def __init__(self):
-        self.pages = []
+    def __init__(self, pages=None):
+        self.pages = pages or []
         self.closed = False
+        self.waited_events = []
 
     def __enter__(self):
         return self
@@ -28,17 +30,30 @@ class FakeCamoufoxInstance:
         self.pages.append(page)
         return page
 
+    def wait_for_event(self, event):
+        self.waited_events.append(event)
+
 
 class FakeCamoufoxFactory:
-    def __init__(self):
+    def __init__(self, instance=None):
         self.calls = []
         self.instances = []
+        self.instance = instance
 
     def __call__(self, **kwargs):
         self.calls.append(kwargs)
-        instance = FakeCamoufoxInstance()
+        instance = self.instance or FakeCamoufoxInstance()
         self.instances.append(instance)
         return instance
+
+
+class WarningCamoufoxInstance(FakeCamoufoxInstance):
+    def __enter__(self):
+        warnings.warn(
+            "When using a proxy, it is heavily recommended that you pass `geoip=True`.",
+            UserWarning,
+        )
+        return self
 
 
 def make_record() -> ProxyRecord:
@@ -186,3 +201,46 @@ def test_camoufox_disables_geoip_before_launching_through_local_proxy(tmp_path):
     assert factory.calls[0]["geoip"] is False
     assert factory.calls[0]["proxy"] == {"server": "socks5://127.0.0.1:7891"}
     assert factory.instances[0].pages[0].visited == ["https://www.browserscan.net"]
+
+
+def test_camoufox_reuses_existing_page_and_waits_for_context_close(tmp_path):
+    initial_page = FakePage()
+    instance = FakeCamoufoxInstance(pages=[initial_page])
+    factory = FakeCamoufoxFactory(instance=instance)
+    adapter = CamoufoxAdapter(
+        profiles_dir=tmp_path / "profiles",
+        templates_dir=tmp_path / "templates",
+        bindings_path=tmp_path / "bindings.json",
+        camoufox_factory=factory,
+    )
+
+    adapter.launch_with_local_proxy(
+        make_record(),
+        local_host="127.0.0.1",
+        local_port=7891,
+        keep_open=True,
+    )
+
+    assert instance.pages == [initial_page]
+    assert initial_page.visited == ["https://www.browserscan.net"]
+    assert instance.waited_events == ["close"]
+
+
+def test_camoufox_suppresses_expected_geoip_warning_for_local_proxy(tmp_path, recwarn):
+    instance = WarningCamoufoxInstance()
+    factory = FakeCamoufoxFactory(instance=instance)
+    adapter = CamoufoxAdapter(
+        profiles_dir=tmp_path / "profiles",
+        templates_dir=tmp_path / "templates",
+        bindings_path=tmp_path / "bindings.json",
+        camoufox_factory=factory,
+    )
+
+    adapter.launch_with_local_proxy(
+        make_record(),
+        local_host="127.0.0.1",
+        local_port=7891,
+        keep_open=False,
+    )
+
+    assert list(recwarn) == []

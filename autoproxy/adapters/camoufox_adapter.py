@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import time
+import warnings
+from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -157,15 +159,41 @@ class CamoufoxAdapter:
         *,
         keep_open: bool,
     ) -> None:
-        with factory(**camoufox_kwargs) as browser:
-            page = browser.new_page()
-            page.goto(start_url, timeout=int(self.timeout * 1000))
-            if keep_open:
-                try:
-                    while True:
-                        time.sleep(1)
-                except KeyboardInterrupt:
-                    pass
+        with self._proxy_warning_filter(camoufox_kwargs):
+            with factory(**camoufox_kwargs) as browser:
+                page = self._page_for_browser(browser)
+                page.goto(start_url, timeout=int(self.timeout * 1000))
+                if keep_open:
+                    self._wait_for_browser_close(browser)
+
+    def _page_for_browser(self, browser: Any) -> Any:
+        pages = list(getattr(browser, "pages", []) or [])
+        if pages:
+            return pages[0]
+        return browser.new_page()
+
+    def _wait_for_browser_close(self, browser: Any) -> None:
+        if hasattr(browser, "wait_for_event"):
+            try:
+                browser.wait_for_event("close")
+                return
+            except KeyboardInterrupt:
+                return
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            return
+
+    @contextmanager
+    def _proxy_warning_filter(self, camoufox_kwargs: dict[str, Any]):
+        if camoufox_kwargs.get("proxy") and camoufox_kwargs.get("geoip") is False:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="When using a proxy.*")
+                yield
+            return
+        with nullcontext():
+            yield
 
     def _is_local_proxy_host(self, host: str) -> bool:
         return host.casefold() in {"127.0.0.1", "localhost", "::1"}
