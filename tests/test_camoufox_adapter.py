@@ -30,8 +30,8 @@ class FakeCamoufoxInstance:
         self.pages.append(page)
         return page
 
-    def wait_for_event(self, event):
-        self.waited_events.append(event)
+    def wait_for_event(self, event, *, timeout=None):
+        self.waited_events.append((event, timeout))
 
 
 class FakeCamoufoxFactory:
@@ -223,7 +223,7 @@ def test_camoufox_reuses_existing_page_and_waits_for_context_close(tmp_path):
 
     assert instance.pages == [initial_page]
     assert initial_page.visited == ["https://www.browserscan.net"]
-    assert instance.waited_events == ["close"]
+    assert instance.waited_events == [("close", 0)]
 
 
 def test_camoufox_suppresses_expected_geoip_warning_for_local_proxy(tmp_path, recwarn):

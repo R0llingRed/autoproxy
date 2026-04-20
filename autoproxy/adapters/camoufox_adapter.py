@@ -175,7 +175,7 @@ class CamoufoxAdapter:
     def _wait_for_browser_close(self, browser: Any) -> None:
         if hasattr(browser, "wait_for_event"):
             try:
-                browser.wait_for_event("close")
+                browser.wait_for_event("close", timeout=0)
                 return
             except KeyboardInterrupt:
                 return
