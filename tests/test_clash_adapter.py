@@ -474,6 +474,79 @@ def test_clash_adapter_script_refreshes_existing_entries_to_current_base_proxy(t
     assert script.count('"dialer-proxy": "new-hop"') == 2
 
 
+def test_clash_adapter_script_uses_first_proxy_from_config_path_as_base_proxy(tmp_path: Path):
+    script_path = tmp_path / "Script.js"
+    script_path.write_text("function main(config, profileName) {\n  return config;\n}\n")
+    config_path = tmp_path / "LVBTdzp4LFQd.yaml"
+    config_path.write_text(
+        """
+proxies:
+  - name: trojan-US
+    type: trojan
+    server: example.test
+    port: 443
+""",
+        encoding="utf-8",
+    )
+    adapter = ClashVergeAdapter(
+        base_proxy_name="hs2-US",
+        write_mode="script",
+        script_path=script_path,
+        config_path=config_path,
+        listener_start_port=7891,
+    )
+    record = ProxyRecord.from_uri(
+        "socks5://5.6.7.8:6789",
+        proxy_id="second",
+        provider="txt",
+        name="second",
+    )
+
+    adapter.apply_proxy(record)
+    script = script_path.read_text(encoding="utf-8")
+
+    assert '"dialer-proxy": "trojan-US"' in script
+    assert '"dialer-proxy": "hs2-US"' not in script
+
+
+def test_clash_adapter_finds_config_path_by_name_under_profile_dir(tmp_path: Path):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+    script_path = tmp_path / "Script.js"
+    script_path.write_text("function main(config, profileName) {\n  return config;\n}\n")
+    actual_config = profile_dir / "LVBTdzp4LFQd.yaml"
+    actual_config.write_text(
+        """
+proxies:
+  - name: trojan-US
+    type: trojan
+    server: example.test
+    port: 443
+""",
+        encoding="utf-8",
+    )
+    adapter = ClashVergeAdapter(
+        base_proxy_name="hs2-US",
+        write_mode="script",
+        script_path=script_path,
+        config_path=tmp_path / "configs" / "profiles" / "LVBTdzp4LFQd.yaml",
+        profile_dir=profile_dir,
+        listener_start_port=7891,
+    )
+    record = ProxyRecord.from_uri(
+        "socks5://5.6.7.8:6789",
+        proxy_id="second",
+        provider="txt",
+        name="second",
+    )
+
+    adapter.apply_proxy(record)
+    script = script_path.read_text(encoding="utf-8")
+
+    assert '"dialer-proxy": "trojan-US"' in script
+    assert '"dialer-proxy": "hs2-US"' not in script
+
+
 def test_clash_adapter_script_refreshes_existing_listeners_to_current_host(tmp_path: Path):
     script_path = tmp_path / "Script.js"
     adapter = ClashVergeAdapter(

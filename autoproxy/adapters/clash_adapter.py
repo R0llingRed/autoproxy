@@ -50,12 +50,19 @@ class ClashVergeAdapter:
         return f"{self.managed_listener_prefix}{record.node_name}"
 
     def build_chained_proxy_node(self, record: ProxyRecord) -> dict[str, Any]:
+        return self._build_chained_proxy_node(record, self.base_proxy_name)
+
+    def _build_chained_proxy_node(
+        self,
+        record: ProxyRecord,
+        base_proxy_name: str,
+    ) -> dict[str, Any]:
         node: dict[str, Any] = {
             "name": self.chain_node_name(record),
             "type": record.type,
             "server": record.host,
             "port": record.port,
-            "dialer-proxy": self.base_proxy_name,
+            "dialer-proxy": base_proxy_name,
         }
         if record.username:
             node["username"] = record.username
@@ -183,9 +190,10 @@ class ClashVergeAdapter:
     def apply_proxy_script(self, record: ProxyRecord) -> ClashApplyResult:
         script_path = self.resolve_script_path()
         current_script = script_path.read_text(encoding="utf-8") if script_path.exists() else ""
+        base_proxy_name = self.resolve_script_base_proxy_name()
         entries = self._managed_entries_from_script(current_script)
-        entries = self._refresh_managed_entries(entries)
-        node = self.build_chained_proxy_node(record)
+        entries = self._refresh_managed_entries(entries, base_proxy_name=base_proxy_name)
+        node = self._build_chained_proxy_node(record, base_proxy_name)
         listener_name = self.listener_name(record)
         existing = next(
             (entry for entry in entries if entry.get("listener", {}).get("name") == listener_name),
@@ -225,7 +233,12 @@ class ClashVergeAdapter:
             local_port=port,
         )
 
-    def _refresh_managed_entries(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _refresh_managed_entries(
+        self,
+        entries: list[dict[str, Any]],
+        *,
+        base_proxy_name: str,
+    ) -> list[dict[str, Any]]:
         refreshed = []
         for entry in entries:
             if not isinstance(entry.get("node"), dict):
@@ -233,7 +246,7 @@ class ClashVergeAdapter:
                 continue
             updated_entry = dict(entry)
             node = dict(entry["node"])
-            node["dialer-proxy"] = self.base_proxy_name
+            node["dialer-proxy"] = base_proxy_name
             updated_entry["node"] = node
             if isinstance(entry.get("listener"), dict):
                 listener = dict(entry["listener"])
@@ -243,6 +256,28 @@ class ClashVergeAdapter:
                 updated_entry["listener"] = listener
             refreshed.append(updated_entry)
         return refreshed
+
+    def resolve_script_base_proxy_name(self) -> str:
+        config_path = self.resolve_config_path()
+        if config_path is None:
+            return self.base_proxy_name
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        for proxy in config.get("proxies") or []:
+            name = proxy.get("name") if isinstance(proxy, dict) else None
+            if name and not str(name).startswith(self.managed_proxy_prefix):
+                return str(name)
+        return self.base_proxy_name
+
+    def resolve_config_path(self) -> Path | None:
+        if self.config_path is None:
+            return None
+        if self.config_path.exists():
+            return self.config_path
+        if self.profile_dir is not None:
+            candidate = self.profile_dir / self.config_path.name
+            if candidate.exists():
+                return candidate
+        return None
 
     def resolve_script_path(self) -> Path:
         if self.script_path is not None:
