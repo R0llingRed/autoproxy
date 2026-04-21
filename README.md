@@ -129,35 +129,41 @@ $env:ADSPOWER_API_KEY = "..."
 
 ## OpenBao 数据格式
 
-推荐每条代理存一条 OpenBao KV v2 secret：
+推荐将所有代理统一存到一个 OpenBao KV v2 secret：
 
 ```bash
-bao kv put secret/autoproxy/proxies/proxy-001 \
-  name=devtest \
-  type=socks5 \
-  host=1.2.3.4 \
-  port=5678 \
-  username=testuser \
-  password=testpass \
-  country=US
+bao kv put secret/external/proxies \
+  proxies:='{
+    "proxy-001": {
+      "name": "devtest",
+      "type": "socks5",
+      "host": "1.2.3.4",
+      "port": 5678,
+      "username": "testuser",
+      "password": "testpass",
+      "country": "US",
+      "updated_at": "2026-04-21T10:30:00Z",
+      "updated_by": "user"
+    }
+  }'
 ```
 
 `name` 会用于生成 sub2api、Clash 和 AdsPower 中的名称。
+`updated_at` 和 `updated_by` 会在导入时自动补齐；`updated_by` 目前只区分 `user` 和 `system`。
 
 配置里 OpenBao 路径分成两个字段：
 
 ```json
 {
   "proxy_source": {
-    "read_path": "autoproxy/proxies/proxy-001",
-    "import_prefix": "autoproxy/proxies"
+    "read_path": "external/proxies",
+    "import_prefix": "external/proxies"
   }
 }
 ```
 
-- `read_path` 是当前主流程读取和同步的单条代理。
-- `import_prefix` 是 JSON 批量导入时写入的目录。
-- 例如 JSON 里有 `{"id": "proxy-010", ...}`，会写入 `secret/autoproxy/proxies/proxy-010`。
+- `read_path` 和 `import_prefix` 都指向共享集合 key。
+- 例如 JSON 里有 `{"id": "proxy-010", ...}`，会写入 `secret/external/proxies` 下的 `proxies.proxy-010`。
 - 旧字段 `secret_path` 仍兼容，但不再推荐。
 
 ## JSON 导入 OpenBao
@@ -215,7 +221,7 @@ JSON 可以是单个对象：
 
 ## 常用命令
 
-列出 OpenBao `import_prefix` 下全部代理：
+列出 `secret/external/proxies` 里的全部代理：
 
 ```bash
 python3 autoproxy.py openbao-get
@@ -308,7 +314,7 @@ python3 autoproxy.py run --session-tag test001 --id proxy-010
 python3 autoproxy.py run --session-tag test001 --name devtest
 ```
 
-写入类命令不指定 `--id` / `--name` 时使用 `read_path`。指定 `--name` 时必须精确匹配到唯一一条代理，避免同名误写。
+`openbao-get` 默认会列出共享 key 里的全部代理。其余读取或执行类命令在共享 key 中存在多条代理时，建议显式传 `--id` 或 `--name`；指定 `--name` 时必须精确匹配到唯一一条代理，避免同名误用。
 
 Windows 下把 `python3 autoproxy.py` 换成 `py -3 .\autoproxy.py` 即可。
 
@@ -391,7 +397,7 @@ nc -vz 127.0.0.1 7891
 
 - AdsPower 免费版只有 2 个环境，超过会创建失败。
 - 推荐用 Clash `script` 模式写扩展脚本；`yaml` 模式只适合 core 直接加载该 YAML 的场景。
-- 当前 OpenBao 主流程一次读取一个 `read_path`；批量导入写入 `import_prefix` 下的不同条目。
+- 当前 OpenBao 使用单一共享 key `secret/external/proxies`；读取时按 `id` 或 `name` 从 `proxies` 对象中选中单条，批量导入会更新同一个 key 下的多个子项。
 - sub2api 和 AdsPower 会尽量复用已有记录，避免重复创建。
 - Windows 下请确认 Clash Verge / AdsPower / OpenBao 的本地 API 端口允许当前用户访问。
 - 所有 JSON、YAML、报告文件按 UTF-8 读写，避免 Windows 中文环境下乱码。

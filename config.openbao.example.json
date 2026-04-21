@@ -4,8 +4,8 @@
     "base_url": "http://127.0.0.1:8200",
     "token": "${OPENBAO_TOKEN}",
     "mount": "secret",
-    "read_path": "autoproxy/proxies/proxy-001",
-    "import_prefix": "autoproxy/proxies",
+    "read_path": "external/proxies",
+    "import_prefix": "external/proxies",
     "timeout": 10.0
   },
   "sub2api": {

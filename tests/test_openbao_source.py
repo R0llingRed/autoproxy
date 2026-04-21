@@ -1,3 +1,5 @@
+from datetime import datetime, UTC
+
 from autoproxy.adapters.openbao_source import OpenBaoProxySource
 from requests import HTTPError
 
@@ -27,12 +29,37 @@ class FakeSession:
     def __init__(self):
         self.last_url = None
         self.last_headers = None
+        self.gets = []
         self.posts = []
         self.requests = []
+        self.collection = {
+            "proxy-001": {
+                "name": "devtest",
+                "type": "socks5",
+                "host": "1.2.3.4",
+                "port": 5678,
+                "username": "testuser",
+                "password": "test123",
+                "country": "US",
+            },
+            "proxy-002": {
+                "name": "backup",
+                "type": "socks5",
+                "host": "5.6.7.8",
+                "port": 6789,
+                "username": "backup",
+                "password": "secret",
+                "country": "SG",
+            },
+        }
 
     def get(self, url, *, headers, timeout):
         self.last_url = url
         self.last_headers = headers
+        self.gets.append((url, headers, timeout))
+        path = url.split("/v1/", 1)[-1]
+        if path == "secret/data/external/proxies":
+            return FakeResponse({"data": {"data": {"proxies": self.collection}}})
         proxy_id = url.rstrip("/").split("/")[-1]
         return FakeResponse(
             {
@@ -55,6 +82,8 @@ class FakeSession:
 
     def post(self, url, *, json, headers, timeout):
         self.posts.append((url, json, headers))
+        if url.endswith("/v1/secret/data/external/proxies"):
+            self.collection = dict(json["data"]["proxies"])
         return FakeResponse({"data": {"version": 1}})
 
     def request(self, method, url, *, headers, timeout):
@@ -63,8 +92,8 @@ class FakeSession:
 
 
 class MissingPrefixSession(FakeSession):
-    def request(self, method, url, *, headers, timeout):
-        self.requests.append((method, url, headers, timeout))
+    def get(self, url, *, headers, timeout):
+        self.gets.append((url, headers, timeout))
         return NotFoundResponse()
 
 
@@ -74,14 +103,14 @@ def test_openbao_source_reads_kv_v2_proxy():
         base_url="http://127.0.0.1:8200",
         token="secret-token",
         mount="secret",
-        read_path="autoproxy/proxies/proxy-001",
-        import_prefix="autoproxy/proxies",
+        read_path="external/proxies",
+        import_prefix="external/proxies",
         session=session,
     )
 
-    payload = source.fetch_proxy()
+    payload = source.fetch_proxy_by_id("proxy-001")
 
-    assert session.last_url == "http://127.0.0.1:8200/v1/secret/data/autoproxy/proxies/proxy-001"
+    assert session.last_url == "http://127.0.0.1:8200/v1/secret/data/external/proxies"
     assert session.last_headers["X-Vault-Token"] == "secret-token"
     assert payload["id"] == "proxy-001"
     assert payload["name"] == "devtest"
@@ -91,12 +120,14 @@ def test_openbao_source_reads_kv_v2_proxy():
 
 def test_openbao_source_writes_proxy_to_kv_v2():
     session = FakeSession()
+    fixed_now = datetime(2026, 4, 21, 10, 30, 0, tzinfo=UTC)
     source = OpenBaoProxySource(
         base_url="http://127.0.0.1:8200",
         token="secret-token",
         mount="secret",
-        read_path="autoproxy/proxies/proxy-001",
-        import_prefix="autoproxy/proxies",
+        read_path="external/proxies",
+        import_prefix="external/proxies",
+        now_provider=lambda: fixed_now,
         session=session,
     )
 
@@ -111,15 +142,15 @@ def test_openbao_source_writes_proxy_to_kv_v2():
     )
 
     url, payload, headers = session.posts[0]
-    assert result["secret_path"] == "autoproxy/proxies/proxy-010"
-    assert url == "http://127.0.0.1:8200/v1/secret/data/autoproxy/proxies/proxy-010"
-    assert payload == {
-        "data": {
-            "name": "file-proxy",
-            "type": "socks5",
-            "host": "1.2.3.4",
-            "port": 5678,
-        }
+    assert result["secret_path"] == "external/proxies"
+    assert url == "http://127.0.0.1:8200/v1/secret/data/external/proxies"
+    assert payload["data"]["proxies"]["proxy-010"] == {
+        "name": "file-proxy",
+        "type": "socks5",
+        "host": "1.2.3.4",
+        "port": 5678,
+        "updated_at": "2026-04-21T10:30:00Z",
+        "updated_by": "system",
     }
     assert headers["X-Vault-Token"] == "secret-token"
 
@@ -145,22 +176,29 @@ def test_openbao_source_imports_proxy_json_file(tmp_path):
 """
     )
     session = FakeSession()
+    fixed_now = datetime(2026, 4, 21, 10, 30, 0, tzinfo=UTC)
     source = OpenBaoProxySource(
         base_url="http://127.0.0.1:8200",
         token="secret-token",
         mount="secret",
-        read_path="autoproxy/proxies/proxy-001",
-        import_prefix="autoproxy/proxies",
+        read_path="external/proxies",
+        import_prefix="external/proxies",
+        now_provider=lambda: fixed_now,
         session=session,
     )
 
     results = source.write_proxies_from_file(source_file)
 
     assert [item["secret_path"] for item in results] == [
-        "autoproxy/proxies/proxy-010",
-        "autoproxy/proxies/proxy-011",
+        "external/proxies",
+        "external/proxies",
     ]
-    assert len(session.posts) == 2
+    assert len(session.posts) == 1
+    written = session.posts[0][1]["data"]["proxies"]
+    assert written["proxy-010"]["updated_at"] == "2026-04-21T10:30:00Z"
+    assert written["proxy-010"]["updated_by"] == "user"
+    assert written["proxy-011"]["updated_at"] == "2026-04-21T10:30:00Z"
+    assert written["proxy-011"]["updated_by"] == "user"
 
 
 def test_openbao_source_lists_proxy_ids_from_import_prefix():
@@ -169,16 +207,15 @@ def test_openbao_source_lists_proxy_ids_from_import_prefix():
         base_url="http://127.0.0.1:8200",
         token="secret-token",
         mount="secret",
-        import_prefix="autoproxy/proxies",
+        import_prefix="external/proxies",
         session=session,
     )
 
     proxy_ids = source.list_proxy_ids()
 
     assert proxy_ids == ["proxy-001", "proxy-002"]
-    method, url, headers, timeout = session.requests[0]
-    assert method == "LIST"
-    assert url == "http://127.0.0.1:8200/v1/secret/metadata/autoproxy/proxies"
+    url, headers, timeout = session.gets[0]
+    assert url == "http://127.0.0.1:8200/v1/secret/data/external/proxies"
     assert headers["X-Vault-Token"] == "secret-token"
     assert timeout == 10.0
 
@@ -188,7 +225,7 @@ def test_openbao_source_returns_empty_list_when_import_prefix_is_missing():
         base_url="http://127.0.0.1:8200",
         token="secret-token",
         mount="secret",
-        import_prefix="autoproxy/proxies",
+        import_prefix="external/proxies",
         session=MissingPrefixSession(),
     )
 
@@ -203,13 +240,13 @@ def test_openbao_source_fetches_proxy_by_id_from_import_prefix():
         base_url="http://127.0.0.1:8200",
         token="secret-token",
         mount="secret",
-        import_prefix="autoproxy/proxies",
+        import_prefix="external/proxies",
         session=session,
     )
 
     payload = source.fetch_proxy_by_id("proxy-002")
 
-    assert session.last_url == "http://127.0.0.1:8200/v1/secret/data/autoproxy/proxies/proxy-002"
+    assert session.last_url == "http://127.0.0.1:8200/v1/secret/data/external/proxies"
     assert payload["id"] == "proxy-002"
     assert payload["name"] == "backup"
 
@@ -220,7 +257,7 @@ def test_openbao_source_fetches_all_proxies():
         base_url="http://127.0.0.1:8200",
         token="secret-token",
         mount="secret",
-        import_prefix="autoproxy/proxies",
+        import_prefix="external/proxies",
         session=session,
     )
 
@@ -235,7 +272,7 @@ def test_openbao_source_finds_proxies_by_name():
         base_url="http://127.0.0.1:8200",
         token="secret-token",
         mount="secret",
-        import_prefix="autoproxy/proxies",
+        import_prefix="external/proxies",
         session=session,
     )
 
@@ -250,7 +287,7 @@ def test_openbao_source_grep_matches_any_field_case_insensitive():
         base_url="http://127.0.0.1:8200",
         token="secret-token",
         mount="secret",
-        import_prefix="autoproxy/proxies",
+        import_prefix="external/proxies",
         session=session,
     )
 

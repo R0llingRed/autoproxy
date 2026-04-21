@@ -30,7 +30,7 @@ class FakeProxySource:
 
     def write_proxies_from_file(self, path):
         self.imported_file = str(path)
-        return [{"secret_path": "autoproxy/proxies/proxy-010"}]
+        return [{"secret_path": "external/proxies"}]
 
     def fetch_all_proxies(self):
         return [
@@ -332,6 +332,23 @@ def test_build_clash_passes_reload_controller_settings(tmp_path):
     assert clash.timeout == 3.0
 
 
+def test_build_proxy_source_defaults_to_shared_external_proxies_path():
+    autoproxy_cli = load_cli_module()
+
+    source = autoproxy_cli.build_proxy_source(
+        {
+            "proxy_source": {
+                "type": "openbao",
+                "base_url": "http://127.0.0.1:8200",
+                "token": "secret-token",
+            }
+        }
+    )
+
+    assert source.read_path == "external/proxies"
+    assert source.import_prefix == "external/proxies"
+
+
 def test_cli_openbao_get_outputs_proxy(tmp_path, monkeypatch, capsys):
     autoproxy_cli = load_cli_module()
     install_fakes(monkeypatch, autoproxy_cli)
@@ -409,7 +426,7 @@ def test_cli_openbao_import_outputs_written_paths(tmp_path, monkeypatch, capsys)
     )
 
     output = json.loads(capsys.readouterr().out)
-    assert output["written"][0]["secret_path"] == "autoproxy/proxies/proxy-010"
+    assert output["written"][0]["secret_path"] == "external/proxies"
 
 
 def test_cli_sub2api_sync_uses_selected_proxy_id(tmp_path, monkeypatch, capsys):
