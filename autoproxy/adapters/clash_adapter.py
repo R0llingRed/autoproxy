@@ -22,6 +22,9 @@ class ClashApplyResult:
     local_host: str
     local_port: int
     reload_status: str = "skipped"
+    write_mode: str = ""
+    resolved_config_path: str = ""
+    resolved_script_path: str = ""
 
 
 @dataclass(slots=True)
@@ -176,17 +179,21 @@ class ClashVergeAdapter:
         if self.write_mode != "yaml":
             raise ValueError(f"unsupported Clash write_mode: {self.write_mode}")
         node_name = self.chain_node_name(record)
-        if self.config_path is None:
+        resolved_config_path = self.resolve_config_path()
+        if resolved_config_path is None:
             return ClashApplyResult(
                 node_name=node_name,
                 listener_name=self.listener_name(record),
                 local_host=self.listener_host,
                 local_port=self.listener_start_port,
+                write_mode="yaml",
             )
-        current = self.config_path.read_text(encoding="utf-8") if self.config_path.exists() else ""
+        current = resolved_config_path.read_text(encoding="utf-8") if resolved_config_path.exists() else ""
         updated = self.merge_config(current, record)
-        self._write_config_atomic(updated)
+        self._write_config_atomic(updated, config_path=resolved_config_path)
         result = self.listener_for_record(updated, record)
+        result.write_mode = "yaml"
+        result.resolved_config_path = str(resolved_config_path)
         if self.reload_after_write or self.restart_after_write:
             result.reload_status = self._post_write_actions()
         return result
@@ -235,6 +242,8 @@ class ClashVergeAdapter:
             listener_name=listener_name,
             local_host=self.listener_host,
             local_port=port,
+            write_mode="script",
+            resolved_script_path=str(script_path),
         )
         if self.reload_after_write or self.restart_after_write:
             result.reload_status = self._post_write_actions()
@@ -403,22 +412,23 @@ function main(config, profileName) {{
         if hasattr(result, "check_returncode"):
             result.check_returncode()
 
-    def _write_config_atomic(self, content: str) -> None:
-        assert self.config_path is not None
-        self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        if self.config_path.exists():
-            shutil.copy2(self.config_path, self.config_path.with_suffix(self.config_path.suffix + ".bak"))
+    def _write_config_atomic(self, content: str, *, config_path: Path | None = None) -> None:
+        target_path = config_path or self.config_path
+        assert target_path is not None
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        if target_path.exists():
+            shutil.copy2(target_path, target_path.with_suffix(target_path.suffix + ".bak"))
         with NamedTemporaryFile(
             "w",
             encoding="utf-8",
-            dir=self.config_path.parent,
+            dir=target_path.parent,
             delete=False,
         ) as handle:
             handle.write(content)
             temp_path = Path(handle.name)
         try:
             yaml.safe_load(temp_path.read_text(encoding="utf-8"))
-            os.replace(temp_path, self.config_path)
+            os.replace(temp_path, target_path)
         except Exception:
             temp_path.unlink(missing_ok=True)
             raise

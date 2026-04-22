@@ -91,6 +91,9 @@ class FakeSub2Api:
 class FakeClash:
     def apply_proxy(self, record):
         class Result:
+            write_mode = "yaml"
+            resolved_config_path = "/tmp/current.yaml"
+            resolved_script_path = ""
             node_name = "auto-chain-fake-devtest"
             listener_name = "auto-listener-fake-devtest"
             local_host = "127.0.0.1"
@@ -651,6 +654,9 @@ def test_cli_clash_write_outputs_listener(tmp_path, monkeypatch, capsys):
     assert autoproxy_cli.main(["--config", str(config_path), "clash-write"]) == 0
 
     output = json.loads(capsys.readouterr().out)
+    assert output["write_mode"] == "yaml"
+    assert output["resolved_config_path"] == "/tmp/current.yaml"
+    assert output["resolved_script_path"] == ""
     assert output["local_port"] == 7890
 
 

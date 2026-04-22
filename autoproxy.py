@@ -267,6 +267,9 @@ def cmd_clash_write(config: dict[str, Any], args: argparse.Namespace) -> int:
     result = build_clash(config).apply_proxy(record)
     print_json(
         {
+            "write_mode": getattr(result, "write_mode", ""),
+            "resolved_config_path": getattr(result, "resolved_config_path", ""),
+            "resolved_script_path": getattr(result, "resolved_script_path", ""),
             "node_name": result.node_name,
             "listener_name": result.listener_name,
             "local_host": result.local_host,
