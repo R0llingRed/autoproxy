@@ -380,6 +380,26 @@ def test_build_clash_defaults_listener_start_port_to_7892():
     assert clash.listener_start_port == 7892
 
 
+def test_build_clash_defaults_windows_yaml_restart(monkeypatch):
+    autoproxy_cli = load_cli_module()
+    monkeypatch.setattr(autoproxy_cli.os, "name", "nt")
+
+    clash = autoproxy_cli.build_clash({"clash": {"write_mode": "yaml"}})
+
+    assert clash.restart_after_write is True
+    assert clash.restart_command == autoproxy_cli.WINDOWS_DEFAULT_RESTART_COMMAND
+
+
+def test_build_clash_does_not_force_restart_outside_windows(monkeypatch):
+    autoproxy_cli = load_cli_module()
+    monkeypatch.setattr(autoproxy_cli.os, "name", "posix")
+
+    clash = autoproxy_cli.build_clash({"clash": {"write_mode": "yaml"}})
+
+    assert clash.restart_after_write is False
+    assert clash.restart_command is None
+
+
 def test_build_proxy_source_defaults_to_shared_external_proxies_path():
     autoproxy_cli = load_cli_module()
 

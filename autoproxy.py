@@ -24,6 +24,11 @@ DEFAULT_CONFIG_PATHS = [
 ]
 CONFIG_DIR_KEY = "__config_dir"
 ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}")
+WINDOWS_DEFAULT_RESTART_COMMAND = [
+    "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+    "-Command",
+    "Restart-Service clash_verge_service",
+]
 
 
 def load_dotenv(path: Path, *, override: bool = False) -> None:
@@ -119,9 +124,16 @@ def build_sub2api(config: dict[str, Any]) -> Sub2ApiAdapter:
 
 def build_clash(config: dict[str, Any]) -> ClashVergeAdapter:
     clash = config["clash"]
+    write_mode = clash.get("write_mode", "yaml")
+    restart_after_write = clash.get("restart_after_write")
+    if restart_after_write is None:
+        restart_after_write = os.name == "nt" and write_mode == "yaml"
+    restart_command = list(clash.get("restart_command") or [])
+    if not restart_command and restart_after_write and os.name == "nt":
+        restart_command = list(WINDOWS_DEFAULT_RESTART_COMMAND)
     return ClashVergeAdapter(
         base_proxy_name=clash.get("base_proxy_name", "A"),
-        write_mode=clash.get("write_mode", "yaml"),
+        write_mode=write_mode,
         managed_group_name=clash.get("managed_group_name", "AUTO-CHAIN"),
         managed_proxy_prefix=clash.get("managed_proxy_prefix", "auto-chain-"),
         listener_start_port=clash.get("listener_start_port", 7892),
@@ -134,8 +146,8 @@ def build_clash(config: dict[str, Any]) -> ClashVergeAdapter:
         controller_url=clash.get("controller_url"),
         controller_secret=clash.get("controller_secret"),
         reload_force=clash.get("reload_force", True),
-        restart_after_write=clash.get("restart_after_write", False),
-        restart_command=list(clash.get("restart_command") or []) or None,
+        restart_after_write=restart_after_write,
+        restart_command=restart_command or None,
         restart_cwd=resolve_path(clash["restart_cwd"], config) if clash.get("restart_cwd") else None,
         timeout=clash.get("timeout", 10.0),
     )

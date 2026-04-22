@@ -408,6 +408,21 @@ Windows 服务模式下，推荐直接重启 Clash Verge 的服务：
 
 `restart_command` 是字符串数组，`clash-write` 写入成功后会直接执行。推荐只在你自己的受控环境中启用。
 
+在 Windows 环境下，如果你使用 `yaml` 模式且没有显式填写 `restart_after_write` / `restart_command`，程序会默认启用：
+
+```json
+{
+  "clash": {
+    "restart_after_write": true,
+    "restart_command": [
+      "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+      "-Command",
+      "Restart-Service clash_verge_service"
+    ]
+  }
+}
+```
+
 如果你确实需要继续使用 Clash Verge Rev 的增强配置链，也保留 `script` 模式支持。但要注意：修改 `Script` 配置后，Clash Verge Rev 通常需要重新启用该 Script，单纯重启 Mihomo 内核不一定会重新应用脚本。
 
 ## Clash Reload
