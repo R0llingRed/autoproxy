@@ -20,6 +20,7 @@ class OpenBaoProxySource:
     read_path: str | None = None
     import_prefix: str | None = None
     secret_path: str | None = None
+    ca_cert_path: str | Path | None = None
     timeout: float = 10.0
     now_provider: Any = datetime.now
     session: Any = field(default_factory=requests.Session)
@@ -42,11 +43,17 @@ class OpenBaoProxySource:
             f"{self.mount.strip('/')}/{kind}/{path.strip('/')}"
         )
 
+    def _request_verify(self) -> bool | str:
+        if self.ca_cert_path is None:
+            return True
+        return str(self.ca_cert_path)
+
     def _read_secret_data(self, path: str) -> dict[str, Any]:
         response = self.session.get(
             self._kv_v2_url(path),
             headers={"X-Vault-Token": self.token, "Accept": "application/json"},
             timeout=self.timeout,
+            verify=self._request_verify(),
         )
         response.raise_for_status()
         payload = response.json()
@@ -81,6 +88,7 @@ class OpenBaoProxySource:
                 "Content-Type": "application/json",
             },
             timeout=self.timeout,
+            verify=self._request_verify(),
         )
         response.raise_for_status()
         return response.json()

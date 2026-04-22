@@ -349,6 +349,31 @@ def test_build_proxy_source_defaults_to_shared_external_proxies_path():
     assert source.import_prefix == "external/proxies"
 
 
+def test_build_proxy_source_resolves_openbao_ca_cert_path_from_config_directory(tmp_path):
+    autoproxy_cli = load_cli_module()
+    config_dir = tmp_path / "project"
+    config_dir.mkdir()
+    config_path = config_dir / "config.local.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "proxy_source": {
+                    "type": "openbao",
+                    "base_url": "https://127.0.0.1:8200",
+                    "token": "secret-token",
+                    "ca_cert_path": "tls/ca.pem",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = autoproxy_cli.load_config(config_path)
+    source = autoproxy_cli.build_proxy_source(config)
+
+    assert Path(source.ca_cert_path).resolve() == (config_dir / "tls" / "ca.pem").resolve()
+
+
 def test_cli_openbao_get_outputs_proxy(tmp_path, monkeypatch, capsys):
     autoproxy_cli = load_cli_module()
     install_fakes(monkeypatch, autoproxy_cli)

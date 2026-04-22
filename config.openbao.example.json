@@ -6,6 +6,7 @@
     "mount": "secret",
     "read_path": "external/proxies",
     "import_prefix": "external/proxies",
+    "ca_cert_path": "${OPENBAO_CA_CERT_PATH:-}",
     "timeout": 10.0
   },
   "sub2api": {

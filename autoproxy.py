@@ -83,6 +83,7 @@ def build_proxy_source(config: dict[str, Any]):
                 read_path=source.get("read_path"),
                 import_prefix=source.get("import_prefix"),
                 secret_path=source.get("secret_path"),
+                ca_cert_path=resolve_path(source["ca_cert_path"], config) if source.get("ca_cert_path") else None,
                 timeout=source.get("timeout", 10.0),
             )
         raise ValueError(f"unsupported proxy_source type: {source_type}")

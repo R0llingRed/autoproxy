@@ -105,6 +105,7 @@ config.local.json -> config.openbao.json -> config.openbao.example.json
 
 ```bash
 export OPENBAO_TOKEN='...'
+export OPENBAO_CA_CERT_PATH='/path/to/openbao-ca.pem'
 export SUB2API_EMAIL='admin@sub2api.local'
 export SUB2API_PASSWORD='...'
 export ADSPOWER_API_KEY='...'
@@ -114,6 +115,7 @@ Windows PowerShell：
 
 ```powershell
 $env:OPENBAO_TOKEN = "..."
+$env:OPENBAO_CA_CERT_PATH = "D:/whfiles/openbao/tls/ca.pem"
 $env:SUB2API_EMAIL = "admin@sub2api.local"
 $env:SUB2API_PASSWORD = "..."
 $env:ADSPOWER_API_KEY = "..."
@@ -124,8 +126,11 @@ $env:ADSPOWER_API_KEY = "..."
 占位符规则：
 
 - `${OPENBAO_TOKEN}` 表示必填，缺失会报错。
+- `${OPENBAO_CA_CERT_PATH:-}` 表示可选，用于 HTTPS 自签 CA 证书链校验。
 - `${SUB2API_TOKEN:-}` 表示可选，缺失时使用空字符串。
 - `${HOST:-127.0.0.1}` 表示可选，缺失时使用默认值。
+
+如果 OpenBao 配的是自签证书，建议把 CA 证书导出成 PEM 文件，并通过 `OPENBAO_CA_CERT_PATH` 或 `proxy_source.ca_cert_path` 传给项目。不要直接关闭 TLS 校验。
 
 ## OpenBao 数据格式
 

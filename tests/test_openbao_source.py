@@ -29,6 +29,7 @@ class FakeSession:
     def __init__(self):
         self.last_url = None
         self.last_headers = None
+        self.last_verify = None
         self.gets = []
         self.posts = []
         self.requests = []
@@ -53,10 +54,11 @@ class FakeSession:
             },
         }
 
-    def get(self, url, *, headers, timeout):
+    def get(self, url, *, headers, timeout, verify=True):
         self.last_url = url
         self.last_headers = headers
-        self.gets.append((url, headers, timeout))
+        self.last_verify = verify
+        self.gets.append((url, headers, timeout, verify))
         path = url.split("/v1/", 1)[-1]
         if path == "secret/data/external/proxies":
             return FakeResponse({"data": {"data": {"proxies": self.collection}}})
@@ -80,8 +82,9 @@ class FakeSession:
             }
         )
 
-    def post(self, url, *, json, headers, timeout):
-        self.posts.append((url, json, headers))
+    def post(self, url, *, json, headers, timeout, verify=True):
+        self.last_verify = verify
+        self.posts.append((url, json, headers, verify))
         if url.endswith("/v1/secret/data/external/proxies"):
             self.collection = dict(json["data"]["proxies"])
         return FakeResponse({"data": {"version": 1}})
@@ -92,9 +95,25 @@ class FakeSession:
 
 
 class MissingPrefixSession(FakeSession):
-    def get(self, url, *, headers, timeout):
-        self.gets.append((url, headers, timeout))
+    def get(self, url, *, headers, timeout, verify=True):
+        self.gets.append((url, headers, timeout, verify))
         return NotFoundResponse()
+
+
+def test_openbao_source_passes_custom_ca_bundle_to_requests():
+    session = FakeSession()
+    source = OpenBaoProxySource(
+        base_url="https://127.0.0.1:8200",
+        token="secret-token",
+        mount="secret",
+        import_prefix="external/proxies",
+        ca_cert_path="D:/whfiles/openbao/tls/ca.pem",
+        session=session,
+    )
+
+    source.fetch_all_proxies()
+
+    assert session.last_verify == "D:/whfiles/openbao/tls/ca.pem"
 
 
 def test_openbao_source_reads_kv_v2_proxy():
