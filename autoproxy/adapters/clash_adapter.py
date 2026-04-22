@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -40,8 +41,12 @@ class ClashVergeAdapter:
     controller_url: str | None = None
     controller_secret: str | None = None
     reload_force: bool = True
+    restart_after_write: bool = False
+    restart_command: list[str] | None = None
+    restart_cwd: Path | None = None
     timeout: float = 10.0
     session: Any = field(default_factory=requests.Session)
+    command_runner: Any = field(default_factory=lambda: subprocess.run)
 
     def chain_node_name(self, record: ProxyRecord) -> str:
         return f"{self.managed_proxy_prefix}{record.node_name}"
@@ -182,9 +187,8 @@ class ClashVergeAdapter:
         updated = self.merge_config(current, record)
         self._write_config_atomic(updated)
         result = self.listener_for_record(updated, record)
-        if self.reload_after_write:
-            self.reload_config()
-            result.reload_status = "reloaded"
+        if self.reload_after_write or self.restart_after_write:
+            result.reload_status = self._post_write_actions()
         return result
 
     def apply_proxy_script(self, record: ProxyRecord) -> ClashApplyResult:
@@ -226,12 +230,25 @@ class ClashVergeAdapter:
         if script_path.exists():
             shutil.copy2(script_path, script_path.with_suffix(script_path.suffix + ".bak"))
         script_path.write_text(self.render_extension_script(entries), encoding="utf-8")
-        return ClashApplyResult(
+        result = ClashApplyResult(
             node_name=node["name"],
             listener_name=listener_name,
             local_host=self.listener_host,
             local_port=port,
         )
+        if self.reload_after_write or self.restart_after_write:
+            result.reload_status = self._post_write_actions()
+        return result
+
+    def _post_write_actions(self) -> str:
+        statuses: list[str] = []
+        if self.reload_after_write:
+            self.reload_config()
+            statuses.append("reloaded")
+        if self.restart_after_write:
+            self.restart_process()
+            statuses.append("restarted")
+        return "+".join(statuses) if statuses else "skipped"
 
     def _refresh_managed_entries(
         self,
@@ -364,6 +381,14 @@ function main(config, profileName) {{
             timeout=self.timeout,
         )
         response.raise_for_status()
+
+    def restart_process(self) -> None:
+        if not self.restart_command:
+            raise ValueError("clash restart_command is required when restart_after_write is enabled")
+        kwargs: dict[str, Any] = {"cwd": str(self.restart_cwd) if self.restart_cwd is not None else None}
+        result = self.command_runner(self.restart_command, **kwargs)
+        if hasattr(result, "check_returncode"):
+            result.check_returncode()
 
     def _write_config_atomic(self, content: str) -> None:
         assert self.config_path is not None

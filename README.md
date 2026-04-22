@@ -367,7 +367,13 @@ AdsPower / Camoufox -> 127.0.0.1:7892 -> Clash -> hs2-US -> 导入代理
     "base_proxy_name": "hs2-US",
     "listener_start_port": 7892,
     "profiles_path": "${CLASH_VERGE_HOME}/profiles.yaml",
-    "profile_dir": "${CLASH_VERGE_HOME}/profiles"
+    "profile_dir": "${CLASH_VERGE_HOME}/profiles",
+    "restart_after_write": true,
+    "restart_command": [
+      "pwsh",
+      "-Command",
+      "Restart-Service ClashVerge"
+    ]
   }
 }
 ```
@@ -378,12 +384,29 @@ macOS 示例：
 export CLASH_VERGE_HOME="$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev"
 ```
 
-`script` 模式会读取 `profiles.yaml` 的 `current` profile，找到该 profile 的 `option.script`，然后写入对应的 `profiles/<script_uid>.js`。执行 `clash-write` 后，需要在 Clash Verge 里重新应用配置或重启内核，再检查端口：
+`script` 模式会读取 `profiles.yaml` 的 `current` profile，找到该 profile 的 `option.script`，然后写入对应的 `profiles/<script_uid>.js`。执行 `clash-write` 后，需要在 Clash Verge 里重新应用配置、重启内核，或者直接执行你配置的重启命令，再检查端口：
 
 ```bash
 python3 autoproxy.py clash-write --id proxy-010
 nc -vz 127.0.0.1 7892
 ```
+
+如果你的 Windows 环境里单纯写入脚本后端口不会立即生效，可以打开进程重启：
+
+```json
+{
+  "clash": {
+    "restart_after_write": true,
+    "restart_command": [
+      "pwsh",
+      "-Command",
+      "Restart-Service ClashVerge"
+    ]
+  }
+}
+```
+
+`restart_command` 是字符串数组，`clash-write` 写入成功后会直接执行。推荐只在你自己的受控环境中启用。
 
 ## Clash Reload
 

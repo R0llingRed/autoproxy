@@ -341,6 +341,9 @@ def test_build_clash_passes_reload_controller_settings(tmp_path):
                     "controller_url": "http://127.0.0.1:9090",
                     "controller_secret": "secret",
                     "reload_force": False,
+                    "restart_after_write": True,
+                    "restart_command": ["pwsh", "-Command", "Restart-Service ClashVerge"],
+                    "restart_cwd": "tools",
                     "timeout": 3.0,
                 }
             }
@@ -360,6 +363,9 @@ def test_build_clash_passes_reload_controller_settings(tmp_path):
     assert clash.controller_url == "http://127.0.0.1:9090"
     assert clash.controller_secret == "secret"
     assert clash.reload_force is False
+    assert clash.restart_after_write is True
+    assert clash.restart_command == ["pwsh", "-Command", "Restart-Service ClashVerge"]
+    assert clash.restart_cwd == config_dir / "tools"
     assert clash.timeout == 3.0
 
 

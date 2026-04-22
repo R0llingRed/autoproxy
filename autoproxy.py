@@ -134,6 +134,9 @@ def build_clash(config: dict[str, Any]) -> ClashVergeAdapter:
         controller_url=clash.get("controller_url"),
         controller_secret=clash.get("controller_secret"),
         reload_force=clash.get("reload_force", True),
+        restart_after_write=clash.get("restart_after_write", False),
+        restart_command=list(clash.get("restart_command") or []) or None,
+        restart_cwd=resolve_path(clash["restart_cwd"], config) if clash.get("restart_cwd") else None,
         timeout=clash.get("timeout", 10.0),
     )
 

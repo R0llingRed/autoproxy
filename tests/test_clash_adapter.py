@@ -28,6 +28,14 @@ class FakeSession:
         return FakeResponse()
 
 
+class FakeCommandRunner:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, command, *, cwd=None):
+        self.calls.append((command, cwd))
+
+
 def base_config() -> str:
     return """
 mixed-port: 7890
@@ -304,6 +312,52 @@ def test_clash_adapter_reloads_running_config_after_write(tmp_path: Path):
     assert payload == {"path": str(config_path.resolve())}
     assert headers["Authorization"] == "Bearer secret"
     assert timeout == 10.0
+
+
+def test_clash_adapter_runs_restart_command_after_script_write(tmp_path: Path):
+    script_path = tmp_path / "Script.js"
+    script_path.write_text("function main(config, profileName) {\n  return config;\n}\n")
+    runner = FakeCommandRunner()
+    adapter = ClashVergeAdapter(
+        base_proxy_name="A",
+        write_mode="script",
+        script_path=script_path,
+        listener_start_port=7892,
+        restart_after_write=True,
+        restart_command=["pwsh", "-Command", "Restart-Service ClashVerge"],
+        restart_cwd=tmp_path,
+        command_runner=runner,
+    )
+    record = ProxyRecord.from_uri(
+        "socks5://user:pass@1.2.3.4:5678",
+        proxy_id="proxy-b",
+        provider="txt",
+        name="devtest",
+    )
+
+    result = adapter.apply_proxy(record)
+
+    assert result.reload_status == "restarted"
+    assert runner.calls == [(["pwsh", "-Command", "Restart-Service ClashVerge"], tmp_path)]
+
+
+def test_clash_adapter_requires_restart_command_when_restart_enabled(tmp_path: Path):
+    script_path = tmp_path / "Script.js"
+    script_path.write_text("function main(config, profileName) {\n  return config;\n}\n")
+    adapter = ClashVergeAdapter(
+        base_proxy_name="A",
+        write_mode="script",
+        script_path=script_path,
+        restart_after_write=True,
+    )
+    record = ProxyRecord.from_uri(
+        "socks5://user:pass@1.2.3.4:5678",
+        proxy_id="proxy-b",
+        provider="txt",
+    )
+
+    with pytest.raises(ValueError, match="restart_command"):
+        adapter.apply_proxy(record)
 
 
 def test_clash_adapter_requires_controller_url_when_reload_enabled(tmp_path: Path):

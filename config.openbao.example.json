@@ -33,6 +33,12 @@
     "reload_after_write": false,
     "controller_url": "http://127.0.0.1:9090",
     "reload_force": true,
+    "restart_after_write": false,
+    "restart_command": [
+      "pwsh",
+      "-Command",
+      "Restart-Service ClashVerge"
+    ],
     "timeout": 10.0
   },
   "adspower": {
