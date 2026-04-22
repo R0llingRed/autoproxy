@@ -27,7 +27,6 @@
     "managed_proxy_prefix": "auto-chain-",
     "listener_start_port": 7892,
     "listener_host": "127.0.0.1",
-    "config_path": "${CLASH_VERGE_HOME:-.}/profiles/L2I6xBSl5LAu.yaml",
     "profiles_path": "${CLASH_VERGE_HOME:-.}/profiles.yaml",
     "profile_dir": "${CLASH_VERGE_HOME:-.}/profiles",
     "reload_after_write": false,

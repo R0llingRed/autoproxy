@@ -286,15 +286,28 @@ class ClashVergeAdapter:
         return self.base_proxy_name
 
     def resolve_config_path(self) -> Path | None:
-        if self.config_path is None:
+        if self.config_path is not None:
+            if self.config_path.exists():
+                return self.config_path
+            if self.profile_dir is not None:
+                candidate = self.profile_dir / self.config_path.name
+                if candidate.exists():
+                    return candidate
+        if self.profiles_path is None:
             return None
-        if self.config_path.exists():
-            return self.config_path
-        if self.profile_dir is not None:
-            candidate = self.profile_dir / self.config_path.name
-            if candidate.exists():
-                return candidate
-        return None
+        profile_dir = self.profile_dir or self.profiles_path.parent / "profiles"
+        profiles = yaml.safe_load(self.profiles_path.read_text(encoding="utf-8")) or {}
+        current = profiles.get("current")
+        for item in profiles.get("items") or []:
+            if item.get("uid") != current:
+                continue
+            if item.get("type") != "local":
+                raise ValueError(f"current Clash profile {current!r} is not a local profile")
+            profile_file = item.get("file")
+            if not profile_file:
+                raise ValueError(f"current Clash profile {current!r} does not define a config file")
+            return profile_dir / str(profile_file)
+        raise ValueError(f"current Clash profile {current!r} was not found in profiles.yaml")
 
     def resolve_script_path(self) -> Path:
         if self.script_path is not None:

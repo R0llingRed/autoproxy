@@ -366,7 +366,8 @@ AdsPower / Camoufox -> 127.0.0.1:7892 -> Clash -> hs2-US -> 导入代理
     "write_mode": "yaml",
     "base_proxy_name": "hs2-US",
     "listener_start_port": 7892,
-    "config_path": "${CLASH_VERGE_HOME}/profiles/L2I6xBSl5LAu.yaml",
+    "profiles_path": "${CLASH_VERGE_HOME}/profiles.yaml",
+    "profile_dir": "${CLASH_VERGE_HOME}/profiles",
     "restart_after_write": true,
     "restart_command": [
       "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
@@ -383,7 +384,7 @@ macOS 示例：
 export CLASH_VERGE_HOME="$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev"
 ```
 
-执行 `clash-write` 后，会直接改 `config_path` 对应的 YAML，再执行你配置的重启命令，随后检查端口：
+执行 `clash-write` 后，会优先修改 `config_path`；如果你没有显式配置 `config_path`，程序会自动从 `profiles.yaml` 解析当前 `local` profile 对应的 YAML 文件，再执行你配置的重启命令，随后检查端口：
 
 ```bash
 python3 autoproxy.py clash-write --id proxy-010
@@ -429,6 +430,7 @@ Windows 服务模式下，推荐直接重启 Clash Verge 的服务：
 关键点：
 
 - `config_path` 必须指向 Clash Verge 当前正在使用的配置文件，而不是一份普通模板。
+- 如果未配置 `config_path`，程序会从 `profiles.yaml` 找到当前 `local` profile 的 YAML 文件。
 - reload 请求会把 `config_path` 转成绝对路径后调用 `PUT /configs?force=true`。
 - 如果 Clash external controller 设置了 secret，请填写 `controller_secret`，或者写成 `${CLASH_CONTROLLER_SECRET}` 并设置环境变量。
 - 如果 Clash Verge 使用增强配置或运行时合并配置，需要确认 core 实际加载的是哪个 profile 文件。

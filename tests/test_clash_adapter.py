@@ -601,6 +601,75 @@ proxies:
     assert '"dialer-proxy": "hs2-US"' not in script
 
 
+def test_clash_adapter_resolves_current_local_profile_yaml_from_profiles_file(tmp_path: Path):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+    profiles_path = tmp_path / "profiles.yaml"
+    active_config = profile_dir / "L2I6xBSl5LAu.yaml"
+    active_config.write_text(base_config(), encoding="utf-8")
+    profiles_path.write_text(
+        """
+current: L2I6xBSl5LAu
+items:
+  - uid: L2I6xBSl5LAu
+    type: local
+    file: L2I6xBSl5LAu.yaml
+""",
+        encoding="utf-8",
+    )
+    adapter = ClashVergeAdapter(
+        base_proxy_name="A",
+        write_mode="yaml",
+        profiles_path=profiles_path,
+        profile_dir=profile_dir,
+        listener_start_port=7892,
+    )
+    record = ProxyRecord.from_uri(
+        "socks5://user:pass@1.2.3.4:5678",
+        proxy_id="proxy-b",
+        provider="txt",
+        name="devtest",
+    )
+
+    result = adapter.apply_proxy(record)
+    parsed = yaml.safe_load(active_config.read_text(encoding="utf-8"))
+
+    assert result.node_name == "auto-chain-txt-devtest"
+    assert parsed["proxy-groups"][-1]["name"] == "AUTO-CHAIN"
+    listeners = {item["name"]: item for item in parsed["listeners"]}
+    assert listeners["auto-listener-txt-devtest"]["port"] == 7892
+
+
+def test_clash_adapter_requires_local_profile_for_yaml_autodetect(tmp_path: Path):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+    profiles_path = tmp_path / "profiles.yaml"
+    profiles_path.write_text(
+        """
+current: remote-profile
+items:
+  - uid: remote-profile
+    type: remote
+    file: remote.yaml
+""",
+        encoding="utf-8",
+    )
+    adapter = ClashVergeAdapter(
+        base_proxy_name="A",
+        write_mode="yaml",
+        profiles_path=profiles_path,
+        profile_dir=profile_dir,
+    )
+    record = ProxyRecord.from_uri(
+        "socks5://user:pass@1.2.3.4:5678",
+        proxy_id="proxy-b",
+        provider="txt",
+    )
+
+    with pytest.raises(ValueError, match="local profile"):
+        adapter.apply_proxy(record)
+
+
 def test_clash_adapter_script_refreshes_existing_listeners_to_current_host(tmp_path: Path):
     script_path = tmp_path / "Script.js"
     adapter = ClashVergeAdapter(
