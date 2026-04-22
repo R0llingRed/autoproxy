@@ -358,21 +358,20 @@ AdsPower / Camoufox -> 127.0.0.1:7892 -> Clash -> hs2-US -> 导入代理
 
 每条代理会占用一个本地 SOCKS 端口，从 `listener_start_port` 开始递增。
 
-推荐使用 `script` 模式写入 Clash Verge 的“扩展脚本”。这样 Clash Verge 生成最终运行配置时会注入链式代理和 listener，比直接修改 profile YAML 更稳定：
+默认推荐使用 `yaml` 模式，直接修改 Clash 当前实际运行的配置文件，然后重启或 reload 内核。这个模式更适合命令行自动化，不依赖 Clash Verge Rev 的 Script 重新启用动作：
 
 ```json
 {
   "clash": {
-    "write_mode": "script",
+    "write_mode": "yaml",
     "base_proxy_name": "hs2-US",
     "listener_start_port": 7892,
-    "profiles_path": "${CLASH_VERGE_HOME}/profiles.yaml",
-    "profile_dir": "${CLASH_VERGE_HOME}/profiles",
+    "config_path": "${CLASH_VERGE_HOME}/profiles/L2I6xBSl5LAu.yaml",
     "restart_after_write": true,
     "restart_command": [
-      "pwsh",
+      "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
       "-Command",
-      "Restart-Service ClashVerge"
+      "Restart-Service clash_verge_service"
     ]
   }
 }
@@ -384,23 +383,23 @@ macOS 示例：
 export CLASH_VERGE_HOME="$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev"
 ```
 
-`script` 模式会读取 `profiles.yaml` 的 `current` profile，找到该 profile 的 `option.script`，然后写入对应的 `profiles/<script_uid>.js`。执行 `clash-write` 后，需要在 Clash Verge 里重新应用配置、重启内核，或者直接执行你配置的重启命令，再检查端口：
+执行 `clash-write` 后，会直接改 `config_path` 对应的 YAML，再执行你配置的重启命令，随后检查端口：
 
 ```bash
 python3 autoproxy.py clash-write --id proxy-010
 nc -vz 127.0.0.1 7892
 ```
 
-如果你的 Windows 环境里单纯写入脚本后端口不会立即生效，可以打开进程重启：
+Windows 服务模式下，推荐直接重启 Clash Verge 的服务：
 
 ```json
 {
   "clash": {
     "restart_after_write": true,
     "restart_command": [
-      "pwsh",
+      "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
       "-Command",
-      "Restart-Service ClashVerge"
+      "Restart-Service clash_verge_service"
     ]
   }
 }
@@ -408,9 +407,11 @@ nc -vz 127.0.0.1 7892
 
 `restart_command` 是字符串数组，`clash-write` 写入成功后会直接执行。推荐只在你自己的受控环境中启用。
 
+如果你确实需要继续使用 Clash Verge Rev 的增强配置链，也保留 `script` 模式支持。但要注意：修改 `Script` 配置后，Clash Verge Rev 通常需要重新启用该 Script，单纯重启 Mihomo 内核不一定会重新应用脚本。
+
 ## Clash Reload
 
-如果仍使用旧的 `yaml` 模式，脚本写入 Clash YAML 后，运行中的 Clash / Mihomo core 不一定会自动加载新 listener。要让新增端口生效，可以尝试开启 external controller reload：
+如果你不想重启服务，也可以在 `yaml` 模式下开启 external controller reload：
 
 ```json
 {
@@ -436,7 +437,7 @@ nc -vz 127.0.0.1 7892
 ## 注意事项
 
 - AdsPower 免费版只有 2 个环境，超过会创建失败。
-- 推荐用 Clash `script` 模式写扩展脚本；`yaml` 模式只适合 core 直接加载该 YAML 的场景。
+- 默认推荐用 Clash `yaml` 模式做自动化；`script` 模式保留给需要依赖 Clash Verge Rev 增强配置链的场景。
 - 当前 OpenBao 使用单一共享 key `secret/external/proxies`；读取时按 `id` 或 `name` 从 `proxies` 对象中选中单条，批量导入会更新同一个 key 下的多个子项。
 - sub2api 和 AdsPower 会尽量复用已有记录，避免重复创建。
 - Windows 下请确认 Clash Verge / AdsPower / OpenBao 的本地 API 端口允许当前用户访问。

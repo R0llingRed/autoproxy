@@ -21,23 +21,23 @@
     "timeout": 10.0
   },
   "clash": {
-    "write_mode": "script",
+    "write_mode": "yaml",
     "base_proxy_name": "hs2-US",
     "managed_group_name": "AUTO-CHAIN",
     "managed_proxy_prefix": "auto-chain-",
     "listener_start_port": 7892,
     "listener_host": "127.0.0.1",
-    "config_path": "configs/clash-verge-standard.yaml",
+    "config_path": "${CLASH_VERGE_HOME:-.}/profiles/L2I6xBSl5LAu.yaml",
     "profiles_path": "${CLASH_VERGE_HOME:-.}/profiles.yaml",
     "profile_dir": "${CLASH_VERGE_HOME:-.}/profiles",
     "reload_after_write": false,
     "controller_url": "http://127.0.0.1:9090",
     "reload_force": true,
-    "restart_after_write": false,
+    "restart_after_write": true,
     "restart_command": [
-      "pwsh",
+      "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
       "-Command",
-      "Restart-Service ClashVerge"
+      "Restart-Service clash_verge_service"
     ],
     "timeout": 10.0
   },

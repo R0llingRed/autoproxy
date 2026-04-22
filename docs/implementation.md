@@ -6,7 +6,7 @@
 - OpenBao JSON 导入：从本地 JSON 文件批量写入代理记录。
 - 本地 TXT 代理源：保留为调试入口，按行读取代理 URI。
 - `sub2api` 适配器：通过 `/api/v1/auth/login` 登录，查询 `/api/v1/admin/proxies`，并提交代理记录。
-- Clash Verge 适配器：支持写入 YAML 或 Clash Verge 扩展脚本。推荐脚本模式，把导入代理 `B` 写成 `dialer-proxy: <first-hop>` 的链式节点，并为每条代理暴露一个本地 SOCKS listener。
+- Clash Verge 适配器：支持写入 YAML 或 Clash Verge 扩展脚本。默认推荐 YAML 模式，把导入代理 `B` 写成 `dialer-proxy: <first-hop>` 的链式节点，并为每条代理暴露一个本地 SOCKS listener。
 - AdsPower 适配器：把上游代理导入 Proxy List，并创建使用本地 Clash SOCKS listener 的浏览器环境。
 - Reporter：把 JSON 和 Markdown 执行报告写入 `docs/reports/`。
 
@@ -31,9 +31,10 @@
 - 导出 `SUB2API_EMAIL` 和 `SUB2API_PASSWORD`，或者直接提供 token。
 - 如果你的 sub2api 部署和默认接口不同，需要确认代理创建接口和字段名。
 - 更新 `configs/clash-verge-standard.yaml`，确保 `clash.base_proxy_name` 指向真实第一跳代理，例如 `hs2-US`。
-- 推荐设置 `clash.write_mode=script`，并把 `profiles_path` / `profile_dir` 指向 Clash Verge 的配置目录。脚本会自动读取 `profiles.yaml` 当前 profile 的 `option.script`。
-- 如果要直接写 YAML，把 `clash.write_mode=yaml`，并把 `clash.config_path` 指向 core 实际加载的配置文件。
-- YAML 模式如需让新增 listener 立即生效，开启 `clash.reload_after_write` 并配置 `clash.controller_url`。
+- 推荐设置 `clash.write_mode=yaml`，并把 `clash.config_path` 指向 core 实际加载的配置文件。
+- Windows 服务模式下，推荐配合 `clash.restart_after_write=true` 和 `Restart-Service clash_verge_service` 让新 listener 立即生效。
+- 如果仍需使用 Clash Verge Rev 的增强配置链，再设置 `clash.write_mode=script`，并把 `profiles_path` / `profile_dir` 指向 Clash Verge 的配置目录。脚本会自动读取 `profiles.yaml` 当前 profile 的 `option.script`。
+- YAML 模式如需通过 external controller 生效，开启 `clash.reload_after_write` 并配置 `clash.controller_url`。
 
 ## Clash 链路形态
 
@@ -57,7 +58,7 @@ client -> first-hop -> B -> target
 
 适配器只管理 `auto-chain-` 前缀的代理、`AUTO-CHAIN` 策略组、`auto-listener-` 前缀的 listener，以及最终的 `MATCH,AUTO-CHAIN` 规则。用户自己的代理和非 `MATCH` 规则会保留。
 
-推荐的 `script` 模式会写入 Clash Verge 当前 profile 的扩展脚本，例如 `profiles/<script_uid>.js`。脚本里维护 `AUTOPROXY_MANAGED` 数组，并在 Clash Verge 生成最终 `clash-verge.yaml` 时注入代理、策略组、规则和 listener。注入前会清理所有 `auto-chain-` 和 `auto-listener-` 残留，避免旧 YAML 直写内容占用同一个本地端口。这个模式适合 Clash Verge 使用增强配置或运行时生成配置的场景。
+推荐的 `yaml` 模式会直接修改当前运行配置，适合命令行自动化和服务重启。`script` 模式则会写入 Clash Verge 当前 profile 的扩展脚本，例如 `profiles/<script_uid>.js`。脚本里维护 `AUTOPROXY_MANAGED` 数组，并在 Clash Verge 生成最终 `clash-verge.yaml` 时注入代理、策略组、规则和 listener。这个模式适合 Clash Verge 使用增强配置或运行时生成配置的场景，但修改脚本后通常需要重新启用 Script。
 
 每条导入代理都会获得一个受管 SOCKS listener。端口从 `clash.listener_start_port` 开始，每条递增 1：
 
