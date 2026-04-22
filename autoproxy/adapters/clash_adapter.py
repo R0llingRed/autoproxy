@@ -34,7 +34,7 @@ class ClashVergeAdapter:
     managed_group_name: str = "AUTO-CHAIN"
     managed_proxy_prefix: str = "auto-chain-"
     managed_listener_prefix: str = "auto-listener-"
-    listener_start_port: int = 7890
+    listener_start_port: int = 7892
     listener_host: str = "127.0.0.1"
     reload_after_write: bool = False
     controller_url: str | None = None

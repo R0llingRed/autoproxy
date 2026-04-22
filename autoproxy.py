@@ -26,6 +26,28 @@ CONFIG_DIR_KEY = "__config_dir"
 ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}")
 
 
+def load_dotenv(path: Path, *, override: bool = False) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        if override or key not in os.environ:
+            os.environ[key] = value
+
+
 def _resolve_env(value: Any) -> Any:
     if isinstance(value, str):
         def replace(match: re.Match[str]) -> str:
@@ -47,6 +69,7 @@ def _resolve_env(value: Any) -> Any:
 
 def load_config(path: Path) -> dict[str, Any]:
     resolved_path = path.expanduser().resolve()
+    load_dotenv(resolved_path.parent / ".env")
     config = _resolve_env(json.loads(resolved_path.read_text(encoding="utf-8")))
     config[CONFIG_DIR_KEY] = resolved_path.parent
     return config
@@ -101,7 +124,7 @@ def build_clash(config: dict[str, Any]) -> ClashVergeAdapter:
         write_mode=clash.get("write_mode", "yaml"),
         managed_group_name=clash.get("managed_group_name", "AUTO-CHAIN"),
         managed_proxy_prefix=clash.get("managed_proxy_prefix", "auto-chain-"),
-        listener_start_port=clash.get("listener_start_port", 7890),
+        listener_start_port=clash.get("listener_start_port", 7892),
         listener_host=clash.get("listener_host", "127.0.0.1"),
         config_path=resolve_path(clash["config_path"], config) if clash.get("config_path") else None,
         script_path=resolve_path(clash["script_path"], config) if clash.get("script_path") else None,

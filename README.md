@@ -101,7 +101,19 @@ config.local.json -> config.openbao.json -> config.openbao.example.json
 }
 ```
 
-需要设置环境变量：
+推荐把敏感配置写进项目根目录 `.env`，这样不需要每次手动注入环境变量：
+
+```dotenv
+OPENBAO_TOKEN=your-openbao-token
+OPENBAO_CA_CERT_PATH=D:/whfiles/openbao/certs/ca.crt
+SUB2API_EMAIL=admin@sub2api.local
+SUB2API_PASSWORD=your-password
+ADSPOWER_API_KEY=
+```
+
+CLI 会在读取配置文件前，自动加载配置文件所在目录下的 `.env`。
+
+如果你不想使用 `.env`，也可以继续手动设置环境变量：
 
 ```bash
 export OPENBAO_TOKEN='...'
@@ -115,7 +127,7 @@ Windows PowerShell：
 
 ```powershell
 $env:OPENBAO_TOKEN = "..."
-$env:OPENBAO_CA_CERT_PATH = "D:/whfiles/openbao/tls/ca.pem"
+$env:OPENBAO_CA_CERT_PATH = "D:/whfiles/openbao/certs/ca.crt"
 $env:SUB2API_EMAIL = "admin@sub2api.local"
 $env:SUB2API_PASSWORD = "..."
 $env:ADSPOWER_API_KEY = "..."
@@ -341,7 +353,7 @@ auto-chain-openbao-devtest:
 实际链路：
 
 ```text
-AdsPower / Camoufox -> 127.0.0.1:7890 -> Clash -> hs2-US -> 导入代理
+AdsPower / Camoufox -> 127.0.0.1:7892 -> Clash -> hs2-US -> 导入代理
 ```
 
 每条代理会占用一个本地 SOCKS 端口，从 `listener_start_port` 开始递增。
@@ -353,7 +365,7 @@ AdsPower / Camoufox -> 127.0.0.1:7890 -> Clash -> hs2-US -> 导入代理
   "clash": {
     "write_mode": "script",
     "base_proxy_name": "hs2-US",
-    "listener_start_port": 7891,
+    "listener_start_port": 7892,
     "profiles_path": "${CLASH_VERGE_HOME}/profiles.yaml",
     "profile_dir": "${CLASH_VERGE_HOME}/profiles"
   }
@@ -370,7 +382,7 @@ export CLASH_VERGE_HOME="$HOME/Library/Application Support/io.github.clash-verge
 
 ```bash
 python3 autoproxy.py clash-write --id proxy-010
-nc -vz 127.0.0.1 7891
+nc -vz 127.0.0.1 7892
 ```
 
 ## Clash Reload

@@ -238,6 +238,37 @@ def test_load_config_records_config_directory_and_reads_utf8(tmp_path):
     assert config[autoproxy_cli.CONFIG_DIR_KEY] == config_dir
 
 
+def test_load_config_reads_dotenv_from_config_directory(tmp_path, monkeypatch):
+    autoproxy_cli = load_cli_module()
+    config_dir = tmp_path / "project"
+    config_dir.mkdir()
+    (config_dir / ".env").write_text(
+        'OPENBAO_TOKEN=dotenv-token\nOPENBAO_CA_CERT_PATH="tls/ca.crt"\n',
+        encoding="utf-8",
+    )
+    config_path = config_dir / "config.local.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "proxy_source": {
+                    "type": "openbao",
+                    "base_url": "https://127.0.0.1:8200",
+                    "token": "${OPENBAO_TOKEN}",
+                    "ca_cert_path": "${OPENBAO_CA_CERT_PATH:-}",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("OPENBAO_TOKEN", raising=False)
+    monkeypatch.delenv("OPENBAO_CA_CERT_PATH", raising=False)
+
+    config = autoproxy_cli.load_config(config_path)
+
+    assert config["proxy_source"]["token"] == "dotenv-token"
+    assert config["proxy_source"]["ca_cert_path"] == "tls/ca.crt"
+
+
 def test_builders_resolve_relative_paths_from_config_directory(tmp_path):
     autoproxy_cli = load_cli_module()
     config_dir = tmp_path / "project"
@@ -330,6 +361,14 @@ def test_build_clash_passes_reload_controller_settings(tmp_path):
     assert clash.controller_secret == "secret"
     assert clash.reload_force is False
     assert clash.timeout == 3.0
+
+
+def test_build_clash_defaults_listener_start_port_to_7892():
+    autoproxy_cli = load_cli_module()
+
+    clash = autoproxy_cli.build_clash({"clash": {}})
+
+    assert clash.listener_start_port == 7892
 
 
 def test_build_proxy_source_defaults_to_shared_external_proxies_path():
