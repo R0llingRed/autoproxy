@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -45,11 +46,19 @@ class ClashVergeAdapter:
     controller_secret: str | None = None
     reload_force: bool = True
     restart_after_write: bool = False
+    restart_strategy: str = "command"
     restart_command: list[str] | None = None
     restart_cwd: Path | None = None
+    mihomo_executable: Path | None = None
+    mihomo_home: Path | None = None
+    mihomo_config_path: Path | None = None
+    mihomo_pipe: str = r"\\.\pipe\verge-mihomo"
+    restart_wait_seconds: float = 2.0
     timeout: float = 10.0
     session: Any = field(default_factory=requests.Session)
     command_runner: Any = field(default_factory=lambda: subprocess.run)
+    process_starter: Any = field(default_factory=lambda: subprocess.Popen)
+    sleep_func: Any = field(default_factory=lambda: time.sleep)
 
     def chain_node_name(self, record: ProxyRecord) -> str:
         return f"{self.managed_proxy_prefix}{record.node_name}"
@@ -405,12 +414,45 @@ function main(config, profileName) {{
         response.raise_for_status()
 
     def restart_process(self) -> None:
+        if self.restart_strategy == "mihomo":
+            self.restart_mihomo()
+            return
+        if self.restart_strategy != "command":
+            raise ValueError(f"unsupported Clash restart_strategy: {self.restart_strategy}")
         if not self.restart_command:
             raise ValueError("clash restart_command is required when restart_after_write is enabled")
         kwargs: dict[str, Any] = {"cwd": str(self.restart_cwd) if self.restart_cwd is not None else None}
         result = self.command_runner(self.restart_command, **kwargs)
         if hasattr(result, "check_returncode"):
             result.check_returncode()
+
+    def restart_mihomo(self) -> None:
+        executable, home, config_path = self._resolve_mihomo_restart_paths()
+        self.command_runner(["taskkill", "/IM", "verge-mihomo.exe", "/F"], cwd=None)
+        self.sleep_func(self.restart_wait_seconds)
+        command = [
+            str(executable),
+            "-d",
+            str(home),
+            "-f",
+            str(config_path),
+            "-ext-ctl-pipe",
+            self.mihomo_pipe,
+        ]
+        self.process_starter(
+            command,
+            cwd=str(executable.parent),
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        self.sleep_func(self.restart_wait_seconds)
+
+    def _resolve_mihomo_restart_paths(self) -> tuple[Path, Path, Path]:
+        config_path = self.mihomo_config_path or self.config_path
+        if config_path is None:
+            raise ValueError("config_path or mihomo_config_path is required for mihomo restart")
+        executable = self.mihomo_executable or Path("D:/Program Files/Clash Verge/verge-mihomo.exe")
+        home = self.mihomo_home or config_path.parent
+        return executable, home, config_path
 
     def _write_config_atomic(self, content: str, *, config_path: Path | None = None) -> None:
         target_path = config_path or self.config_path

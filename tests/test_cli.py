@@ -345,8 +345,14 @@ def test_build_clash_passes_reload_controller_settings(tmp_path):
                     "controller_secret": "secret",
                     "reload_force": False,
                     "restart_after_write": True,
+                    "restart_strategy": "command",
                     "restart_command": ["pwsh", "-Command", "Restart-Service ClashVerge"],
                     "restart_cwd": "tools",
+                    "mihomo_executable": "bin/verge-mihomo.exe",
+                    "mihomo_home": "clash-home",
+                    "mihomo_config_path": "clash-home/clash-verge.yaml",
+                    "mihomo_pipe": "\\\\.\\pipe\\custom-mihomo",
+                    "restart_wait_seconds": 0.5,
                     "timeout": 3.0,
                 }
             }
@@ -367,8 +373,14 @@ def test_build_clash_passes_reload_controller_settings(tmp_path):
     assert clash.controller_secret == "secret"
     assert clash.reload_force is False
     assert clash.restart_after_write is True
+    assert clash.restart_strategy == "command"
     assert clash.restart_command == ["pwsh", "-Command", "Restart-Service ClashVerge"]
     assert clash.restart_cwd == config_dir / "tools"
+    assert clash.mihomo_executable == config_dir / "bin" / "verge-mihomo.exe"
+    assert clash.mihomo_home == config_dir / "clash-home"
+    assert clash.mihomo_config_path == config_dir / "clash-home" / "clash-verge.yaml"
+    assert clash.mihomo_pipe == "\\\\.\\pipe\\custom-mihomo"
+    assert clash.restart_wait_seconds == 0.5
     assert clash.timeout == 3.0
 
 
@@ -387,7 +399,18 @@ def test_build_clash_defaults_windows_yaml_restart(monkeypatch):
     clash = autoproxy_cli.build_clash({"clash": {"write_mode": "yaml"}})
 
     assert clash.restart_after_write is True
-    assert clash.restart_command == autoproxy_cli.WINDOWS_DEFAULT_RESTART_COMMAND
+    assert clash.restart_strategy == "mihomo"
+    assert clash.restart_command is None
+
+
+def test_build_clash_defaults_windows_mihomo_config_path_from_env(monkeypatch):
+    autoproxy_cli = load_cli_module()
+    monkeypatch.setattr(autoproxy_cli.os, "name", "nt")
+    monkeypatch.setenv("CLASH_VERGE_HOME", "C:/Users/Administrator/AppData/Roaming/ClashVerge")
+
+    clash = autoproxy_cli.build_clash({"clash": {"write_mode": "yaml"}})
+
+    assert clash.config_path == Path("C:/Users/Administrator/AppData/Roaming/ClashVerge") / "clash-verge.yaml"
 
 
 def test_build_clash_does_not_force_restart_outside_windows(monkeypatch):

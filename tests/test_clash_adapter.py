@@ -36,6 +36,14 @@ class FakeCommandRunner:
         self.calls.append((command, cwd))
 
 
+class FakeProcessStarter:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, command, *, cwd=None, creationflags=0):
+        self.calls.append((command, cwd, creationflags))
+
+
 def base_config() -> str:
     return """
 mixed-port: 7890
@@ -358,6 +366,54 @@ def test_clash_adapter_requires_restart_command_when_restart_enabled(tmp_path: P
 
     with pytest.raises(ValueError, match="restart_command"):
         adapter.apply_proxy(record)
+
+
+def test_clash_adapter_restarts_mihomo_with_python_process_calls(tmp_path: Path):
+    config_path = tmp_path / "clash-verge.yaml"
+    config_path.write_text(base_config(), encoding="utf-8")
+    executable = tmp_path / "Clash Verge" / "verge-mihomo.exe"
+    executable.parent.mkdir()
+    runner = FakeCommandRunner()
+    starter = FakeProcessStarter()
+    sleeps = []
+    adapter = ClashVergeAdapter(
+        base_proxy_name="A",
+        config_path=config_path,
+        restart_after_write=True,
+        restart_strategy="mihomo",
+        mihomo_executable=executable,
+        mihomo_pipe=r"\\.\pipe\verge-mihomo",
+        restart_wait_seconds=0.25,
+        command_runner=runner,
+        process_starter=starter,
+        sleep_func=sleeps.append,
+    )
+    record = ProxyRecord.from_uri(
+        "socks5://user:pass@1.2.3.4:5678",
+        proxy_id="proxy-b",
+        provider="txt",
+    )
+
+    result = adapter.apply_proxy(record)
+
+    assert result.reload_status == "restarted"
+    assert runner.calls == [(["taskkill", "/IM", "verge-mihomo.exe", "/F"], None)]
+    assert starter.calls == [
+        (
+            [
+                str(executable),
+                "-d",
+                str(tmp_path),
+                "-f",
+                str(config_path),
+                "-ext-ctl-pipe",
+                r"\\.\pipe\verge-mihomo",
+            ],
+            str(executable.parent),
+            0,
+        )
+    ]
+    assert sleeps == [0.25, 0.25]
 
 
 def test_clash_adapter_requires_controller_url_when_reload_enabled(tmp_path: Path):

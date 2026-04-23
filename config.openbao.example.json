@@ -27,17 +27,15 @@
     "managed_proxy_prefix": "auto-chain-",
     "listener_start_port": 7892,
     "listener_host": "127.0.0.1",
-    "profiles_path": "${CLASH_VERGE_HOME:-.}/profiles.yaml",
-    "profile_dir": "${CLASH_VERGE_HOME:-.}/profiles",
+    "config_path": "${CLASH_VERGE_HOME:-.}/clash-verge.yaml",
     "reload_after_write": false,
     "controller_url": "http://127.0.0.1:9090",
     "reload_force": true,
     "restart_after_write": true,
-    "restart_command": [
-      "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
-      "-Command",
-      "Restart-Service clash_verge_service"
-    ],
+    "restart_strategy": "mihomo",
+    "mihomo_executable": "D:/Program Files/Clash Verge/verge-mihomo.exe",
+    "mihomo_home": "${CLASH_VERGE_HOME:-.}",
+    "restart_wait_seconds": 2.0,
     "timeout": 10.0
   },
   "adspower": {

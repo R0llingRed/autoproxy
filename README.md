@@ -366,14 +366,12 @@ AdsPower / Camoufox -> 127.0.0.1:7892 -> Clash -> hs2-US -> 导入代理
     "write_mode": "yaml",
     "base_proxy_name": "hs2-US",
     "listener_start_port": 7892,
-    "profiles_path": "${CLASH_VERGE_HOME}/profiles.yaml",
-    "profile_dir": "${CLASH_VERGE_HOME}/profiles",
+    "config_path": "${CLASH_VERGE_HOME}/clash-verge.yaml",
     "restart_after_write": true,
-    "restart_command": [
-      "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
-      "-Command",
-      "Restart-Service clash_verge_service"
-    ]
+    "restart_strategy": "mihomo",
+    "mihomo_executable": "D:/Program Files/Clash Verge/verge-mihomo.exe",
+    "mihomo_home": "${CLASH_VERGE_HOME}",
+    "restart_wait_seconds": 2.0
   }
 }
 ```
@@ -384,44 +382,46 @@ macOS 示例：
 export CLASH_VERGE_HOME="$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev"
 ```
 
-执行 `clash-write` 后，会优先修改 `config_path`；如果你没有显式配置 `config_path`，程序会自动从 `profiles.yaml` 解析当前 `local` profile 对应的 YAML 文件，再执行你配置的重启命令，随后检查端口：
+执行 `clash-write` 后，会优先修改 `config_path`，然后按 `restart_strategy` 重启内核，随后检查端口：
 
 ```bash
 python3 autoproxy.py clash-write --id proxy-010
 nc -vz 127.0.0.1 7892
 ```
 
-Windows 服务模式下，推荐直接重启 Clash Verge 的服务：
+Windows 上推荐使用内置的 `mihomo` 重启策略，不再把复杂 PowerShell 写进 JSON。该策略会执行：
+
+- `taskkill /IM verge-mihomo.exe /F`
+- `verge-mihomo.exe -d <mihomo_home> -f <config_path> -ext-ctl-pipe \\.\pipe\verge-mihomo`
+
+```json
+{
+  "clash": {
+    "config_path": "${CLASH_VERGE_HOME}/clash-verge.yaml",
+    "restart_after_write": true,
+    "restart_strategy": "mihomo",
+    "mihomo_executable": "D:/Program Files/Clash Verge/verge-mihomo.exe",
+    "mihomo_home": "${CLASH_VERGE_HOME}"
+  }
+}
+```
+
+如果你仍然需要自定义命令，可以改回 `command` 策略：
 
 ```json
 {
   "clash": {
     "restart_after_write": true,
+    "restart_strategy": "command",
     "restart_command": [
-      "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
-      "-Command",
-      "Restart-Service clash_verge_service"
+      "your-command",
+      "arg1"
     ]
   }
 }
 ```
 
 `restart_command` 是字符串数组，`clash-write` 写入成功后会直接执行。推荐只在你自己的受控环境中启用。
-
-在 Windows 环境下，如果你使用 `yaml` 模式且没有显式填写 `restart_after_write` / `restart_command`，程序会默认启用：
-
-```json
-{
-  "clash": {
-    "restart_after_write": true,
-    "restart_command": [
-      "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
-      "-Command",
-      "Restart-Service clash_verge_service"
-    ]
-  }
-}
-```
 
 如果你确实需要继续使用 Clash Verge Rev 的增强配置链，也保留 `script` 模式支持。但要注意：修改 `Script` 配置后，Clash Verge Rev 通常需要重新启用该 Script，单纯重启 Mihomo 内核不一定会重新应用脚本。
 

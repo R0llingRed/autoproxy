@@ -24,12 +24,6 @@ DEFAULT_CONFIG_PATHS = [
 ]
 CONFIG_DIR_KEY = "__config_dir"
 ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}")
-WINDOWS_DEFAULT_RESTART_COMMAND = [
-    "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
-    "-Command",
-    "Restart-Service clash_verge_service",
-]
-
 
 def load_dotenv(path: Path, *, override: bool = False) -> None:
     if not path.exists():
@@ -128,9 +122,13 @@ def build_clash(config: dict[str, Any]) -> ClashVergeAdapter:
     restart_after_write = clash.get("restart_after_write")
     if restart_after_write is None:
         restart_after_write = os.name == "nt" and write_mode == "yaml"
+    restart_strategy = clash.get("restart_strategy")
+    if restart_strategy is None:
+        restart_strategy = "mihomo" if restart_after_write and os.name == "nt" and write_mode == "yaml" else "command"
     restart_command = list(clash.get("restart_command") or [])
-    if not restart_command and restart_after_write and os.name == "nt":
-        restart_command = list(WINDOWS_DEFAULT_RESTART_COMMAND)
+    config_path = resolve_path(clash["config_path"], config) if clash.get("config_path") else None
+    if config_path is None and restart_strategy == "mihomo" and os.environ.get("CLASH_VERGE_HOME"):
+        config_path = Path(os.environ["CLASH_VERGE_HOME"]).expanduser() / "clash-verge.yaml"
     return ClashVergeAdapter(
         base_proxy_name=clash.get("base_proxy_name", "A"),
         write_mode=write_mode,
@@ -138,7 +136,7 @@ def build_clash(config: dict[str, Any]) -> ClashVergeAdapter:
         managed_proxy_prefix=clash.get("managed_proxy_prefix", "auto-chain-"),
         listener_start_port=clash.get("listener_start_port", 7892),
         listener_host=clash.get("listener_host", "127.0.0.1"),
-        config_path=resolve_path(clash["config_path"], config) if clash.get("config_path") else None,
+        config_path=config_path,
         script_path=resolve_path(clash["script_path"], config) if clash.get("script_path") else None,
         profiles_path=resolve_path(clash["profiles_path"], config) if clash.get("profiles_path") else None,
         profile_dir=resolve_path(clash["profile_dir"], config) if clash.get("profile_dir") else None,
@@ -147,8 +145,14 @@ def build_clash(config: dict[str, Any]) -> ClashVergeAdapter:
         controller_secret=clash.get("controller_secret"),
         reload_force=clash.get("reload_force", True),
         restart_after_write=restart_after_write,
+        restart_strategy=restart_strategy,
         restart_command=restart_command or None,
         restart_cwd=resolve_path(clash["restart_cwd"], config) if clash.get("restart_cwd") else None,
+        mihomo_executable=resolve_path(clash["mihomo_executable"], config) if clash.get("mihomo_executable") else None,
+        mihomo_home=resolve_path(clash["mihomo_home"], config) if clash.get("mihomo_home") else None,
+        mihomo_config_path=resolve_path(clash["mihomo_config_path"], config) if clash.get("mihomo_config_path") else None,
+        mihomo_pipe=clash.get("mihomo_pipe", r"\\.\pipe\verge-mihomo"),
+        restart_wait_seconds=clash.get("restart_wait_seconds", 2.0),
         timeout=clash.get("timeout", 10.0),
     )
 
