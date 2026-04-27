@@ -109,6 +109,7 @@ OPENBAO_CA_CERT_PATH=D:/whfiles/openbao/certs/ca.crt
 SUB2API_EMAIL=admin@sub2api.local
 SUB2API_PASSWORD=your-password
 ADSPOWER_API_KEY=
+CAMOUFOX_WINDOW=1440x900
 ```
 
 CLI 会在读取配置文件前，自动加载配置文件所在目录下的 `.env`。
@@ -309,6 +310,14 @@ python3 autoproxy.py camoufox-launch --id proxy-010 --template desktop-humanized
 https://www.browserscan.net
 ```
 
+如果你想固定窗口尺寸，可以在 `.env` 里增加：
+
+```dotenv
+CAMOUFOX_WINDOW=1440x900
+```
+
+然后在 `config.local.json` 的 `camoufox.window` 使用 `${CAMOUFOX_WINDOW:-}`。项目会把它解析成 Camoufox 的 `window=(1440, 900)`。
+
 查询 Camoufox 本地模板：
 
 ```bash
@@ -323,13 +332,30 @@ python3 autoproxy.py camoufox-profiles
 python3 autoproxy.py camoufox-profiles --id proxy-010
 ```
 
+批量创建 sub2api API key：
+
+```bash
+python3 autoproxy.py sub2api-keys-bulk --file sub2api-keys.txt
+```
+
+`sub2api-keys.txt` 使用 UTF-8 编码，每行一条：
+
+```text
+test-a,1
+test-b,2
+```
+
+格式固定为 `name,group-id`，允许空行，`#` 开头的行会被忽略。
+
 执行完整流程：
 
 ```bash
-python3 autoproxy.py run --session-tag test001
-python3 autoproxy.py run --session-tag test001 --id proxy-010
-python3 autoproxy.py run --session-tag test001 --name devtest
+python3 autoproxy.py run
+python3 autoproxy.py run --id proxy-010
+python3 autoproxy.py run --name devtest
 ```
+
+`run` 不再要求手动传 `--session-tag`。如果省略，报告文件会默认使用当前时间小时标签，例如 `2026-04-24-17.json` 和 `2026-04-24-17.md`。
 
 `openbao-get` 默认会列出共享 key 里的全部代理。其余读取或执行类命令在共享 key 中存在多条代理时，建议显式传 `--id` 或 `--name`；指定 `--name` 时必须精确匹配到唯一一条代理，避免同名误用。
 

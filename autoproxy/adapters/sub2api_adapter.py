@@ -17,6 +17,7 @@ class Sub2ApiAdapter:
     login_path: str = "/api/v1/auth/login"
     list_path: str = "/api/v1/admin/proxies"
     create_path: str = "/api/admin/proxies"
+    keys_create_path: str = "/api/v1/keys"
     timezone: str = "Asia/Shanghai"
     timeout: float = 10.0
     session: Any = field(default_factory=requests.Session)
@@ -125,6 +126,31 @@ class Sub2ApiAdapter:
         if not proxy_id:
             raise ValueError("sub2api did not return a proxy id")
         return str(proxy_id)
+
+    def create_key(self, name: str, *, group_id: int) -> dict[str, Any]:
+        self.login()
+        payload = {"name": name, "group_id": group_id}
+        response = self.session.post(
+            f"{self._base_url}{self.keys_create_path}",
+            json=payload,
+            headers=self._build_headers(),
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        data = response.json()
+        key_id = data.get("id") or data.get("data", {}).get("id")
+        return {
+            "name": name,
+            "group_id": group_id,
+            "key_id": key_id,
+            "response": data,
+        }
+
+    def create_keys_bulk(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            self.create_key(str(item["name"]), group_id=int(item["group_id"]))
+            for item in items
+        ]
 
     def find_proxy(self, record: ProxyRecord) -> str | None:
         for item in self.iter_proxy_items():

@@ -44,6 +44,7 @@ class CamoufoxAdapter:
     os: list[str] | str | None = None
     locale: str | None = None
     block_images: bool | None = None
+    window: tuple[int, int] | None = None
     camoufox_factory: Any | None = None
 
     def launch_with_local_proxy(
@@ -128,6 +129,7 @@ class CamoufoxAdapter:
             "os": self.os,
             "locale": self.locale,
             "block_images": self.block_images,
+            "window": self.window,
         }
         for key, value in configured.items():
             if value is not None:

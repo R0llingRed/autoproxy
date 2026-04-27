@@ -1,6 +1,7 @@
 import json
 import importlib.util
 from pathlib import Path
+from datetime import datetime
 
 
 def load_cli_module():
@@ -86,6 +87,16 @@ class FakeProxySource:
 class FakeSub2Api:
     def sync_proxy(self, record):
         return "sub2api-1"
+
+    def create_keys_bulk(self, items):
+        return [
+            {
+                "name": item["name"],
+                "group_id": item["group_id"],
+                "key_id": index,
+            }
+            for index, item in enumerate(items, start=1)
+        ]
 
 
 class FakeClash:
@@ -465,6 +476,30 @@ def test_build_proxy_source_resolves_openbao_ca_cert_path_from_config_directory(
     assert Path(source.ca_cert_path).resolve() == (config_dir / "tls" / "ca.pem").resolve()
 
 
+def test_load_config_reads_camoufox_window_from_dotenv(tmp_path, monkeypatch):
+    autoproxy_cli = load_cli_module()
+    config_dir = tmp_path / "project"
+    config_dir.mkdir()
+    (config_dir / ".env").write_text("CAMOUFOX_WINDOW=1440x900\n", encoding="utf-8")
+    config_path = config_dir / "config.local.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "camoufox": {
+                    "window": "${CAMOUFOX_WINDOW:-}",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("CAMOUFOX_WINDOW", raising=False)
+
+    config = autoproxy_cli.load_config(config_path)
+    camoufox = autoproxy_cli.build_camoufox(config)
+
+    assert camoufox.window == (1440, 900)
+
+
 def test_cli_openbao_get_outputs_proxy(tmp_path, monkeypatch, capsys):
     autoproxy_cli = load_cli_module()
     install_fakes(monkeypatch, autoproxy_cli)
@@ -555,6 +590,59 @@ def test_cli_sub2api_sync_uses_selected_proxy_id(tmp_path, monkeypatch, capsys):
     output = json.loads(capsys.readouterr().out)
     assert output["proxy"]["id"] == "proxy-123"
     assert output["proxy"]["name"] == "by-id"
+
+
+def test_cli_sub2api_keys_bulk_creates_multiple_keys_from_file(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    config_path = write_config(tmp_path)
+    key_file = tmp_path / "keys.txt"
+    key_file.write_text("test-a,1\ntest-b,2\n", encoding="utf-8")
+
+    assert (
+        autoproxy_cli.main(
+            [
+                "--config",
+                str(config_path),
+                "sub2api-keys-bulk",
+                "--file",
+                str(key_file),
+            ]
+        )
+        == 0
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["created"][0]["name"] == "test-a"
+    assert output["created"][1]["name"] == "test-b"
+    assert output["created"][0]["group_id"] == 1
+    assert output["created"][1]["group_id"] == 2
+
+
+def test_parse_sub2api_key_file_reads_name_and_group_id(tmp_path):
+    autoproxy_cli = load_cli_module()
+    key_file = tmp_path / "keys.txt"
+    key_file.write_text("\n test-a,1 \n# ignored\ntest-b,2\n", encoding="utf-8")
+
+    parsed = autoproxy_cli.parse_sub2api_key_file(key_file)
+
+    assert parsed == [
+        {"name": "test-a", "group_id": 1},
+        {"name": "test-b", "group_id": 2},
+    ]
+
+
+def test_parse_sub2api_key_file_rejects_invalid_line(tmp_path):
+    autoproxy_cli = load_cli_module()
+    key_file = tmp_path / "keys.txt"
+    key_file.write_text("test-a\n", encoding="utf-8")
+
+    try:
+        autoproxy_cli.parse_sub2api_key_file(key_file)
+    except ValueError as exc:
+        assert "line 1" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
 
 
 def test_cli_clash_write_uses_selected_proxy_name(tmp_path, monkeypatch, capsys):
@@ -724,3 +812,21 @@ def test_cli_run_keeps_full_flow(tmp_path, monkeypatch, capsys):
     output = json.loads(capsys.readouterr().out)
     assert output["session_tag"] == "cli-test"
     assert output["adspower_profile_id"] == "profile-7890"
+
+
+def test_cli_run_defaults_session_tag_to_timestamp(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    config_path = write_config(tmp_path)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 4, 24, 11, 22, 33, tzinfo=tz)
+
+    monkeypatch.setattr(autoproxy_cli, "datetime", FixedDatetime)
+
+    assert autoproxy_cli.main(["--config", str(config_path), "run"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["session_tag"] == "2026-04-24-11"

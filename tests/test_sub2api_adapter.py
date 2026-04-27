@@ -174,3 +174,29 @@ def test_sub2api_reuses_existing_proxy_found_on_later_page():
         call[0] == "POST" and call[1].endswith("/api/v1/admin/proxies")
         for call in session.calls
     )
+
+
+def test_sub2api_creates_keys_in_batch():
+    session = FakeSession()
+    adapter = Sub2ApiAdapter(
+        base_url="https://sub2api.example.com",
+        token="secret",
+        session=session,
+    )
+
+    result = adapter.create_keys_bulk(
+        [
+            {"name": "test-a", "group_id": 1},
+            {"name": "test-b", "group_id": 2},
+        ]
+    )
+
+    assert len(result) == 2
+    assert result[0]["name"] == "test-a"
+    assert result[1]["name"] == "test-b"
+    assert result[0]["group_id"] == 1
+    assert result[1]["group_id"] == 2
+    create_calls = [call for call in session.calls if call[0] == "POST"]
+    assert create_calls[0][1].endswith("/api/v1/keys")
+    assert create_calls[0][2] == {"name": "test-a", "group_id": 1}
+    assert create_calls[1][2] == {"name": "test-b", "group_id": 2}

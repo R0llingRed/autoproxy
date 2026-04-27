@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -116,6 +117,18 @@ def build_sub2api(config: dict[str, Any]) -> Sub2ApiAdapter:
     return Sub2ApiAdapter(**config["sub2api"])
 
 
+def parse_window_size(value: str | None) -> tuple[int, int] | None:
+    if value in {None, ""}:
+        return None
+    match = re.fullmatch(r"(\d+)x(\d+)", value.strip(), re.IGNORECASE)
+    if not match:
+        raise ValueError("camoufox.window must use WIDTHxHEIGHT, for example 1440x900")
+    width, height = int(match.group(1)), int(match.group(2))
+    if width <= 0 or height <= 0:
+        raise ValueError("camoufox.window must use positive integers")
+    return (width, height)
+
+
 def build_clash(config: dict[str, Any]) -> ClashVergeAdapter:
     clash = config["clash"]
     write_mode = clash.get("write_mode", "yaml")
@@ -177,6 +190,7 @@ def build_camoufox(config: dict[str, Any]) -> CamoufoxAdapter:
         os=camoufox.get("os"),
         locale=camoufox.get("locale"),
         block_images=camoufox.get("block_images"),
+        window=parse_window_size(camoufox.get("window")),
     )
 
 
@@ -234,6 +248,33 @@ def print_json(payload: Any) -> None:
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
 
+def default_session_tag() -> str:
+    return datetime.now().strftime("%Y-%m-%d-%H")
+
+
+def parse_sub2api_key_file(path: Path) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [part.strip() for part in line.split(",", 1)]
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise ValueError(
+                f"invalid sub2api key file line {line_number}: expected 'name,group-id'"
+            )
+        try:
+            group_id = int(parts[1])
+        except ValueError as exc:
+            raise ValueError(
+                f"invalid sub2api key file line {line_number}: group-id must be an integer"
+            ) from exc
+        items.append({"name": parts[0], "group_id": group_id})
+    if not items:
+        raise ValueError("sub2api key file did not contain any valid entries")
+    return items
+
+
 def cmd_openbao_get(config: dict[str, Any], args: argparse.Namespace) -> int:
     source = build_proxy_source(config)
     if args.id:
@@ -275,6 +316,14 @@ def cmd_sub2api_sync(config: dict[str, Any], args: argparse.Namespace) -> int:
     record = load_selected_proxy(config, args.name, args.id)
     proxy_id = build_sub2api(config).sync_proxy(record)
     print_json({"sub2api_proxy_id": proxy_id, "proxy": record.to_dict()})
+    return 0
+
+
+def cmd_sub2api_keys_bulk(config: dict[str, Any], args: argparse.Namespace) -> int:
+    created = build_sub2api(config).create_keys_bulk(
+        parse_sub2api_key_file(Path(args.file).expanduser())
+    )
+    print_json({"created": created})
     return 0
 
 
@@ -386,6 +435,7 @@ def build_parser() -> argparse.ArgumentParser:
         "openbao-grep": cmd_openbao_grep,
         "openbao-import": cmd_openbao_import,
         "sub2api-sync": cmd_sub2api_sync,
+        "sub2api-keys-bulk": cmd_sub2api_keys_bulk,
         "clash-write": cmd_clash_write,
         "adspower-add-proxy": cmd_adspower_add_proxy,
         "adspower-create-profile": cmd_adspower_create_profile,
@@ -415,6 +465,12 @@ def build_parser() -> argparse.ArgumentParser:
             group = subparser.add_mutually_exclusive_group()
             group.add_argument("--id", help="Select one OpenBao proxy by id under import_prefix.")
             group.add_argument("--name", help="Select one OpenBao proxy whose name matches exactly.")
+        if name == "sub2api-keys-bulk":
+            subparser.add_argument(
+                "--file",
+                required=True,
+                help="Path to a UTF-8 text file; each line must be 'name,group-id'.",
+            )
         if name == "openbao-import":
             subparser.add_argument("--file", required=True, help="Path to proxy JSON file.")
         if name == "camoufox-launch":
@@ -429,7 +485,7 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "camoufox-profiles":
             subparser.add_argument("--id", help="Read one Camoufox binding by proxy id.")
         if name == "run":
-            subparser.add_argument("--session-tag", required=True)
+            subparser.add_argument("--session-tag", default=default_session_tag())
     return parser
 
 
