@@ -53,7 +53,8 @@
     "humanize": true,
     "start_url": "https://www.browserscan.net",
     "timeout": 30.0,
-    "window": "${CAMOUFOX_WINDOW:-}"
+    "window": "${CAMOUFOX_WINDOW:-1280x720}",
+    "timezone": "${CAMOUFOX_TIMEZONE:-}"
   },
   "report_base_dir": "docs"
 }

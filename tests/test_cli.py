@@ -1,6 +1,6 @@
 import json
 import importlib.util
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from datetime import datetime
 
 
@@ -157,6 +157,9 @@ class FakeCamoufox:
             "Result",
             (),
             {
+                "browser": "camoufox",
+                "profile_dir": "/tmp/profile",
+                "start_url": "https://www.browserscan.net",
                 "to_dict": lambda self: {
                     "browser": "camoufox",
                     "proxy_id": record.id,
@@ -421,7 +424,7 @@ def test_build_clash_defaults_windows_mihomo_config_path_from_env(monkeypatch):
 
     clash = autoproxy_cli.build_clash({"clash": {"write_mode": "yaml"}})
 
-    assert clash.config_path == Path("C:/Users/Administrator/AppData/Roaming/ClashVerge") / "clash-verge.yaml"
+    assert clash.config_path == PureWindowsPath("C:/Users/Administrator/AppData/Roaming/ClashVerge") / "clash-verge.yaml"
 
 
 def test_build_clash_does_not_force_restart_outside_windows(monkeypatch):
@@ -498,6 +501,32 @@ def test_load_config_reads_camoufox_window_from_dotenv(tmp_path, monkeypatch):
     camoufox = autoproxy_cli.build_camoufox(config)
 
     assert camoufox.window == (1440, 900)
+
+
+def test_build_camoufox_defaults_to_compact_window(tmp_path):
+    autoproxy_cli = load_cli_module()
+    config = {
+        autoproxy_cli.CONFIG_DIR_KEY: tmp_path,
+        "camoufox": {},
+    }
+
+    camoufox = autoproxy_cli.build_camoufox(config)
+
+    assert camoufox.window == (1280, 720)
+
+
+def test_build_camoufox_reads_timezone_override(tmp_path):
+    autoproxy_cli = load_cli_module()
+    config = {
+        autoproxy_cli.CONFIG_DIR_KEY: tmp_path,
+        "camoufox": {
+            "timezone": "America/Los_Angeles",
+        },
+    }
+
+    camoufox = autoproxy_cli.build_camoufox(config)
+
+    assert camoufox.timezone == "America/Los_Angeles"
 
 
 def test_cli_openbao_get_outputs_proxy(tmp_path, monkeypatch, capsys):
@@ -757,6 +786,37 @@ def test_cli_run_uses_selected_proxy_id(tmp_path, monkeypatch, capsys):
     output = json.loads(capsys.readouterr().out)
     assert output["proxy"]["id"] == "proxy-123"
     assert output["proxy"]["name"] == "by-id"
+
+
+def test_cli_run_can_launch_camoufox_full_flow(tmp_path, monkeypatch, capsys):
+    autoproxy_cli = load_cli_module()
+    install_fakes(monkeypatch, autoproxy_cli)
+    config_path = write_config(tmp_path)
+
+    assert (
+        autoproxy_cli.main(
+            [
+                "--config",
+                str(config_path),
+                "run",
+                "--session-tag",
+                "cli-test",
+                "--id",
+                "proxy-123",
+                "--browser",
+                "camoufox",
+            ]
+        )
+        == 0
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["proxy"]["id"] == "proxy-123"
+    assert output["sub2api_proxy_id"] == "sub2api-1"
+    assert output["clash_node_name"] == "auto-chain-fake-devtest"
+    assert output["browser"] == "camoufox"
+    assert output["browser_start_url"] == "https://www.browserscan.net"
+    assert output["adspower_profile_id"] == ""
 
 
 def test_selected_proxy_name_must_match_one_record(tmp_path, monkeypatch):

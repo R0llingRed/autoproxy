@@ -181,7 +181,7 @@ def test_camoufox_template_values_override_builtin_defaults(tmp_path):
     assert factory.calls[0]["humanize"] is False
 
 
-def test_camoufox_disables_geoip_before_launching_through_local_proxy(tmp_path):
+def test_camoufox_uses_geoip_by_default_through_local_clash_listener(tmp_path):
     factory = FakeCamoufoxFactory()
     adapter = CamoufoxAdapter(
         profiles_dir=tmp_path / "profiles",
@@ -198,9 +198,50 @@ def test_camoufox_disables_geoip_before_launching_through_local_proxy(tmp_path):
     )
 
     assert len(factory.calls) == 1
-    assert factory.calls[0]["geoip"] is False
+    assert factory.calls[0]["geoip"] is True
     assert factory.calls[0]["proxy"] == {"server": "socks5://127.0.0.1:7891"}
     assert factory.instances[0].pages[0].visited == ["https://www.browserscan.net"]
+
+
+def test_camoufox_keeps_geoip_enabled_through_local_clash_listener(tmp_path):
+    factory = FakeCamoufoxFactory()
+    adapter = CamoufoxAdapter(
+        profiles_dir=tmp_path / "profiles",
+        templates_dir=tmp_path / "templates",
+        bindings_path=tmp_path / "bindings.json",
+        geoip=True,
+        camoufox_factory=factory,
+    )
+
+    adapter.launch_with_local_proxy(
+        make_record(),
+        local_host="127.0.0.1",
+        local_port=7891,
+        keep_open=False,
+    )
+
+    assert factory.calls[0]["geoip"] is True
+    assert factory.calls[0]["proxy"] == {"server": "socks5://127.0.0.1:7891"}
+
+
+def test_camoufox_passes_timezone_as_fingerprint_config(tmp_path):
+    factory = FakeCamoufoxFactory()
+    adapter = CamoufoxAdapter(
+        profiles_dir=tmp_path / "profiles",
+        templates_dir=tmp_path / "templates",
+        bindings_path=tmp_path / "bindings.json",
+        timezone="America/Los_Angeles",
+        camoufox_factory=factory,
+    )
+
+    adapter.launch_with_local_proxy(
+        make_record(),
+        local_host="127.0.0.1",
+        local_port=7891,
+        keep_open=False,
+    )
+
+    assert factory.calls[0]["config"] == {"timezone": "America/Los_Angeles"}
 
 
 def test_camoufox_reuses_existing_page_and_waits_for_context_close(tmp_path):
@@ -233,6 +274,7 @@ def test_camoufox_suppresses_expected_geoip_warning_for_local_proxy(tmp_path, re
         profiles_dir=tmp_path / "profiles",
         templates_dir=tmp_path / "templates",
         bindings_path=tmp_path / "bindings.json",
+        geoip=False,
         camoufox_factory=factory,
     )
 

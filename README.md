@@ -313,10 +313,16 @@ https://www.browserscan.net
 如果你想固定窗口尺寸，可以在 `.env` 里增加：
 
 ```dotenv
-CAMOUFOX_WINDOW=1440x900
+CAMOUFOX_WINDOW=1280x720
 ```
 
-然后在 `config.local.json` 的 `camoufox.window` 使用 `${CAMOUFOX_WINDOW:-}`。项目会把它解析成 Camoufox 的 `window=(1440, 900)`。
+然后在 `config.local.json` 的 `camoufox.window` 使用 `${CAMOUFOX_WINDOW:-1280x720}`。项目会把它解析成 Camoufox 的 `window=(1280, 720)`。如果想交给 Camoufox 自动生成窗口，设置为 `auto`。
+
+默认 `geoip=true` 会让 Camoufox 通过当前代理自动匹配经纬度、时区和语言。只有确实需要手动覆盖时，再设置：
+
+```dotenv
+CAMOUFOX_TIMEZONE=America/Los_Angeles
+```
 
 查询 Camoufox 本地模板：
 
@@ -353,6 +359,7 @@ test-b,2
 python3 autoproxy.py run
 python3 autoproxy.py run --id proxy-010
 python3 autoproxy.py run --name devtest
+python3 autoproxy.py run --id proxy-010 --browser camoufox
 ```
 
 `run` 不再要求手动传 `--session-tag`。如果省略，报告文件会默认使用当前时间小时标签，例如 `2026-04-24-17.json` 和 `2026-04-24-17.md`。

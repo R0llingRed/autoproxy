@@ -4,8 +4,9 @@ import argparse
 import json
 import os
 import re
+import sys
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from autoproxy.adapters.adspower_adapter import AdsPowerAdapter
@@ -120,9 +121,11 @@ def build_sub2api(config: dict[str, Any]) -> Sub2ApiAdapter:
 def parse_window_size(value: str | None) -> tuple[int, int] | None:
     if value in {None, ""}:
         return None
+    if value.strip().casefold() in {"auto", "random"}:
+        return None
     match = re.fullmatch(r"(\d+)x(\d+)", value.strip(), re.IGNORECASE)
     if not match:
-        raise ValueError("camoufox.window must use WIDTHxHEIGHT, for example 1440x900")
+        raise ValueError("camoufox.window must use WIDTHxHEIGHT, for example 1280x720, or auto")
     width, height = int(match.group(1)), int(match.group(2))
     if width <= 0 or height <= 0:
         raise ValueError("camoufox.window must use positive integers")
@@ -141,7 +144,10 @@ def build_clash(config: dict[str, Any]) -> ClashVergeAdapter:
     restart_command = list(clash.get("restart_command") or [])
     config_path = resolve_path(clash["config_path"], config) if clash.get("config_path") else None
     if config_path is None and restart_strategy == "mihomo" and os.environ.get("CLASH_VERGE_HOME"):
-        config_path = Path(os.environ["CLASH_VERGE_HOME"]).expanduser() / "clash-verge.yaml"
+        if os.name == "nt" and sys.platform != "win32":
+            config_path = PureWindowsPath(os.environ["CLASH_VERGE_HOME"]) / "clash-verge.yaml"
+        else:
+            config_path = Path(os.environ["CLASH_VERGE_HOME"]).expanduser() / "clash-verge.yaml"
     return ClashVergeAdapter(
         base_proxy_name=clash.get("base_proxy_name", "A"),
         write_mode=write_mode,
@@ -178,6 +184,9 @@ def build_adspower(config: dict[str, Any]) -> AdsPowerAdapter | None:
 
 def build_camoufox(config: dict[str, Any]) -> CamoufoxAdapter:
     camoufox = config.get("camoufox", {})
+    window = camoufox.get("window", "1280x720")
+    if window in {None, ""}:
+        window = "1280x720"
     return CamoufoxAdapter(
         profiles_dir=resolve_path(camoufox.get("profiles_dir", "data/camoufox/profiles"), config),
         templates_dir=resolve_path(camoufox.get("templates_dir", "data/camoufox/templates"), config),
@@ -189,13 +198,16 @@ def build_camoufox(config: dict[str, Any]) -> CamoufoxAdapter:
         timeout=camoufox.get("timeout", 30.0),
         os=camoufox.get("os"),
         locale=camoufox.get("locale"),
+        timezone=camoufox.get("timezone"),
         block_images=camoufox.get("block_images"),
-        window=parse_window_size(camoufox.get("window")),
+        window=parse_window_size(window),
     )
 
 
-def build_runner(config: dict[str, Any]) -> FlowRunner:
-    browser = config.get("browser")
+def build_runner(config: dict[str, Any], *, browser: str | None = None) -> FlowRunner:
+    browser = browser or config.get("browser")
+    if browser == "none":
+        browser = None
     adspower = build_adspower(config)
     browser_adapter = None
     if browser == "camoufox":
@@ -412,7 +424,7 @@ def cmd_camoufox_profiles(config: dict[str, Any], args: argparse.Namespace) -> i
 
 
 def cmd_run(config: dict[str, Any], args: argparse.Namespace) -> int:
-    runner = build_runner(config)
+    runner = build_runner(config, browser=args.browser)
     if args.id or args.name:
         runner.proxy_source = StaticProxySource(
             load_selected_proxy(config, args.name, args.id).to_dict()
@@ -486,6 +498,11 @@ def build_parser() -> argparse.ArgumentParser:
             subparser.add_argument("--id", help="Read one Camoufox binding by proxy id.")
         if name == "run":
             subparser.add_argument("--session-tag", default=default_session_tag())
+            subparser.add_argument(
+                "--browser",
+                choices=["adspower", "camoufox", "none"],
+                help="Override config.browser for this run.",
+            )
     return parser
 
 

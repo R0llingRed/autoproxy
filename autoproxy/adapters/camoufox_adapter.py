@@ -43,6 +43,7 @@ class CamoufoxAdapter:
     timeout: float = 30.0
     os: list[str] | str | None = None
     locale: str | None = None
+    timezone: str | None = None
     block_images: bool | None = None
     window: tuple[int, int] | None = None
     camoufox_factory: Any | None = None
@@ -75,8 +76,6 @@ class CamoufoxAdapter:
         )
         self._upsert_binding(result)
         factory = self.camoufox_factory or self._load_camoufox_factory()
-        if launch_options.get("geoip") is True and self._is_local_proxy_host(local_host):
-            launch_options["geoip"] = False
         camoufox_kwargs = {
             **launch_options,
             "proxy": {"server": proxy_server},
@@ -137,6 +136,10 @@ class CamoufoxAdapter:
         if start_url:
             options["start_url"] = start_url
         options.setdefault("start_url", DEFAULT_START_URL)
+        if self.timezone:
+            config = dict(options.get("config") or {})
+            config["timezone"] = self.timezone
+            options["config"] = config
         return options
 
     def _upsert_binding(self, result: CamoufoxLaunchResult) -> None:
@@ -196,9 +199,6 @@ class CamoufoxAdapter:
             return
         with nullcontext():
             yield
-
-    def _is_local_proxy_host(self, host: str) -> bool:
-        return host.casefold() in {"127.0.0.1", "localhost", "::1"}
 
     def _read_bindings(self) -> dict[str, dict[str, Any]]:
         if not self.bindings_path.exists():
